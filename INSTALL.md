@@ -1,0 +1,77 @@
+# Установка dantes-inferno-nx 0.1.0 (Dante's Inferno для Nintendo Switch)
+
+dantes-inferno-nx — нативный порт Dante's Inferno (Xbox 360) для Switch в виде homebrew-программы. Готовых файлов не
+распространяется: код игры, шейдеры и программа собираются у вас на компьютере **из вашей собственной копии** (диск
+Xbox 360 и Title Update 2).
+
+> Версия 0.1.0 — первая сборка, на консоли ещё не проверялась.
+
+## Что понадобится
+
+| Что | Подробности |
+| --- | --- |
+| Nintendo Switch | С кастомной прошивкой **Atmosphère** и Homebrew Menu |
+| Карта microSD | Свободно **~7 ГБ**, exFAT или FAT32 (самый большой файл игры 3,2 ГБ) |
+| Образ вашего диска | Dante's Inferno для Xbox 360, `.iso`, издание **Europe** (En/De/It), Media ID **27C36C6C** |
+| Title Update 2 | Для этого издания: `TU_12K226F_000000C000000.00000000000G3` |
+| Компьютер | **macOS** (проверено) или Linux (не проверялось), ~10 ГБ свободного места, интернет |
+
+Каждый файл проверяется по контрольной сумме: код собирается из исполняемого файла с TU2, другие издания и обновления
+к нему не подходят.
+
+## Шаг 1. Инструменты (один раз)
+
+1. **Инструменты Xcode:** `xcode-select --install`.
+2. **Homebrew** (https://brew.sh), затем `brew install cmake ninja python git`.
+3. **devkitPro:** установщик со страницы https://github.com/devkitPro/pacman/releases, затем
+   `sudo dkp-pacman -S switch-dev deko3d`.
+4. **Vulkan SDK** (https://vulkan.lunarg.com): нужны `dxc` и `spirv-val` для шейдеров; на macOS ставится в
+   `~/VulkanSDK`.
+
+## Шаг 2. Подготовить файлы игры
+
+```
+git clone --recursive https://github.com/VasilkovND/dantes-inferno-nx
+cd dantes-inferno-nx
+python3 dante/tools/stage_sd.py --disc "<путь к ISO>" --tu "<путь к TU_12K226F_000000C000000.00000000000G3>" -o sd/dantes-inferno-nx
+```
+
+Скрипт проверит обновление и диск и распакует диск в `sd/dantes-inferno-nx/game/` вместе с `default.xexp` из
+обновления (несколько минут).
+
+## Шаг 3. Собрать программу и шейдеры
+
+```
+dante/tools/build_mac.sh sd/dantes-inferno-nx/game
+```
+
+Первый раз ~30–40 минут и ~4 ГБ места: скрипт скачает проект Hell's Gate (PC-порт, ровно проверенную версию) и
+ReXGlue, сгенерирует код игры из вашего `default.xex`, извлечёт и переведёт 1 359 шейдеров и соберёт программу.
+Результат:
+
+- `dante/out/sw/dante.nro`
+- `dante/out/shaders/dante_shaders.dslib`
+- `dante/out/shaders/shadercache_dksh.bin`
+
+## Шаг 4. Скопировать на карту
+
+```
+sdmc:/switch/dantes-inferno-nx/
+    dantes-inferno-nx.nro    dante/out/sw/dante.nro, переименован
+    dante_shaders.dslib      dante/out/shaders/
+    shadercache_dksh.bin     dante/out/shaders/
+    game/                    sd/dantes-inferno-nx/game/ целиком
+```
+
+Логи пишутся в `sdmc:/switch/dantes-inferno-nx/logs/`.
+
+## Запуск
+
+1. Запустите **любую установленную игру, удерживая кнопку R**: так откроется Homebrew Menu с полным доступом к памяти.
+   Через альбом (режим апплета) памяти не хватит.
+2. Выберите **Dante's Inferno**.
+
+Счётчик FPS: **ZL + ZR + вверх на крестовине**.
+
+Если игра покажет шейдер, которого нет в библиотеке, программа сохранит его в `shaders_dump/` рядом с собой: пришлите
+эту папку и `logs/` разработчику.

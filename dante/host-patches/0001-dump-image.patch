@@ -1,0 +1,25 @@
+diff --git a/src/codegen/project_recompiler.cpp b/src/codegen/project_recompiler.cpp
+index 240bcb0..a6530cb 100644
+--- a/src/codegen/project_recompiler.cpp
++++ b/src/codegen/project_recompiler.cpp
+@@ -1,3 +1,5 @@
++#include <cstdio>
++#include <cstdlib>
+ /**
+  * @file        codegen/project_recompiler.cpp
+  * @brief       Project-level recompiler driving manifest-based multi-binary codegen
+@@ -308,6 +310,14 @@ Result<void> ProjectRecompiler::Run(const ProjectRecompilerOptions& opts) {
+   {
+     auto execMod = runtime->kernel_state()->GetExecutableModule();
+     auto bv = BinaryView::fromModule(*execMod->xex_module());
++    // Local tool only: dump the loaded (decrypted, decompressed, patched) image for offline analysis.
++    if (const char* dump = std::getenv("REX_DUMP_IMAGE")) {
++      const auto* p = runtime->memory()->TranslateVirtual<const uint8_t*>(bv.baseAddress());
++      if (FILE* f = std::fopen(dump, "wb")) {
++        std::fwrite(p, 1, bv.imageSize(), f);
++        std::fclose(f);
++      }
++    }
+ 
+     auto entry_display = make_display_name(targeted[0].config.filePath);
+     RecompilerConfig cfg = std::move(targeted[0].config);

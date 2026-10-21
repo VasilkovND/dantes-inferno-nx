@@ -1,0 +1,17 @@
+# Names for the functions the Switch code hooks, added to Hell's Gate's manifest by tools/codegen.sh. Addresses are
+# Title Update 2's. Each one was found by its body being instruction for instruction the same as the function of
+# that name in Dead Space 2's recompiled code (same XDK and RenderWare Audio libraries).
+
+# XDK Direct3D: every shader the game creates (dante_shader_dump.cpp).
+[entrypoint.functions.0x827E8780]
+name = "D3DDevice_CreateVertexShader"
+
+[entrypoint.functions.0x827E8598]
+name = "D3DDevice_CreatePixelShader"
+
+# RenderWare Audio's mixer leaves (dante_audio.cpp).
+[entrypoint.functions.0x8243D968]
+name = "rw__audio__core__MixWithGain"
+
+[entrypoint.functions.0x82435918]
+name = "rw__audio__core__CopyWithGain"

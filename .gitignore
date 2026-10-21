@@ -1,0 +1,37 @@
+# Nothing derived from the game is ever committed: its files, the code generated from default.xex, and the
+# binaries built from that code.
+
+# --- Game files ---------------------------------------------------------------
+assets/
+rom/
+*.xex
+*.xexp
+*.iso
+*.bin
+*.big
+*.bun
+*.viv
+*.dslib
+shaders_dump/
+
+# --- Generated from the game --------------------------------------------------
+generated/
+
+# --- Build output -------------------------------------------------------------
+out/
+build/
+*.nro
+*.nacp
+*.elf
+*.o
+*.obj
+*.a
+*.log
+*.err
+
+# --- Tools --------------------------------------------------------------------
+__pycache__/
+*.pyc
+.vs/
+.vscode/
+.DS_Store

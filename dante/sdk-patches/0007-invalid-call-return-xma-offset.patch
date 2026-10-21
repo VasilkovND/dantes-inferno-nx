@@ -1,0 +1,46 @@
+diff -ru a/src/audio/xma_context.cpp b/src/audio/xma_context.cpp
+--- a/src/audio/xma_context.cpp
++++ b/src/audio/xma_context.cpp
+@@ -788,7 +788,8 @@
+   fresh.input_buffer_read_offset = data.input_buffer_read_offset;
+   fresh.error_status = data.error_status;
+   fresh.current_buffer = data.current_buffer;
+-  fresh.output_buffer_read_offset = data.output_buffer_read_offset;
++  // Not output_buffer_read_offset: the guest owns it (XMASetOutputBufferReadOffset), and storing this snapshot's value
++  // back would undo the guest's update and replay output it already consumed (Hell's Gate, Dante's Inferno's PC port).
+ 
+   fresh.Store(context_ptr);
+ }
+diff -ru a/src/system/function_dispatcher.cpp b/src/system/function_dispatcher.cpp
+--- a/src/system/function_dispatcher.cpp
++++ b/src/system/function_dispatcher.cpp
+@@ -13,6 +13,9 @@
+  *              role as a function dispatch table rather than a CPU emulator.
+  */
+ 
++#include <mutex>
++#include <unordered_set>
++
+ #include <rex/assert.h>
+ #include <rex/dbg.h>
+ #include <rex/logging.h>
+@@ -34,9 +37,17 @@
+ 
+ }  // namespace
+ 
++// An indirect call to an address with no recompiled function. Some targets are computed at run time (vtable slots
++// that static analysis cannot see); Dante's Inferno makes such calls and runs on when they return, as Hell's Gate (its
++// PC port) found. Each target is logged once, then the call returns.
+ static void InvalidFunctionTrap(PPCContext& ctx, uint8_t* /*base*/) {
+-  REX_FATAL("Call to invalid or unregistered function at guest address 0x{:08X}",
+-            ctx.last_indirect_target);
++  static std::mutex mutex;
++  static std::unordered_set<uint32_t> logged;
++  std::lock_guard<std::mutex> lock(mutex);
++  if (logged.insert(ctx.last_indirect_target).second) {
++    REXLOG_ERROR("Call to invalid or unregistered function at guest address 0x{:08X} (lr 0x{:08X}): returning",
++                 ctx.last_indirect_target, uint32_t(ctx.lr));
++  }
+ }
+ 
+ PPCFunc* ResolveIndirectFunction(uint32_t guest_address) {
