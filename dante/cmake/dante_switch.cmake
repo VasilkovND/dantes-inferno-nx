@@ -49,6 +49,12 @@ endif()
 include("${DANTE_TREE}/sources.cmake")
 set(DANTE_GUEST_SOURCES ${GENERATED_SOURCES})
 set_source_files_properties(${DANTE_GUEST_SOURCES} PROPERTIES COMPILE_OPTIONS "${REXGLUE_RECOMP_OPTIONS}")
+# The registration unit is one function of ~37,000 SetFunction calls, run once at startup: at -O3 GCC spends ~6 minutes
+# on it alone, on one core, longer than all the other units together on ten. -O1 takes seconds. It needs nothing from
+# the PCH (its own includes), and a PCH built at -O3 cannot be used at -O1.
+set_source_files_properties("${DANTE_TREE}/dantes_inferno_register.cpp" PROPERTIES
+    COMPILE_OPTIONS "${REXGLUE_RECOMP_OPTIONS};-O1"
+    SKIP_PRECOMPILE_HEADERS ON)
 list(LENGTH DANTE_GUEST_SOURCES _dante_n)
 message(STATUS "dante: ${_dante_n} recompiled sources from ${DANTE_GENERATED}")
 

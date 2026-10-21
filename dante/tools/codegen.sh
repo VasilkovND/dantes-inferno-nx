@@ -109,15 +109,38 @@ STAMP="$CG/inputs.sha"
 INPUTS=$(cat "$CG/game/default.xex" "$CG/game/default.xexp" "$CG/dantes_inferno_manifest.toml" \
   "$CG/patches/generated/apply_generated_patches.py" "$REXGLUE" | shasum -a 256 | cut -d' ' -f1)
 if [ "$(cat "$STAMP" 2>/dev/null)" != "$INPUTS" ] || [ ! -f "$CG/generated/default/sources.cmake" ]; then
+  # Generated and fixed in a staging folder, then only the files whose text changed are copied over generated/:
+  # the others keep their dates, so after a small change (a name in names.toml) Ninja rebuilds a few units, not 135.
   echo "== codegen"
-  rm -rf "$CG/generated"
-  (cd "$CG" && REX_DUMP_IMAGE="$CG/image.bin" "$REXGLUE" --force codegen dantes_inferno_manifest.toml > codegen.log 2>&1) || {
+  ST="$CG/staging"
+  rm -rf "$ST"
+  mkdir -p "$ST/patches/generated"
+  cp "$CG/dantes_inferno_manifest.toml" "$ST/"
+  cp "$CG/patches/generated/apply_generated_patches.py" "$ST/patches/generated/"
+  ln -s ../game "$ST/game"
+  (cd "$ST" && REX_DUMP_IMAGE="$CG/image.bin" "$REXGLUE" --force codegen dantes_inferno_manifest.toml > "$CG/codegen.log" 2>&1) || {
     tail -20 "$CG/codegen.log"; exit 1; }
   echo "== generated-code fixes (Hell's Gate)"
-  (cd "$CG" && python3 patches/generated/apply_generated_patches.py > apply_generated_patches.log)
+  (cd "$ST" && python3 patches/generated/apply_generated_patches.py > "$CG/apply_generated_patches.log")
   tail -1 "$CG/apply_generated_patches.log"
   grep -q 'Remaining REX_FATAL unresolved traps: 0 ' "$CG/apply_generated_patches.log" || {
     echo "unresolved branches left in the generated code (see $CG/apply_generated_patches.log)"; exit 1; }
+  python3 - "$ST/generated/default" "$CG/generated/default" <<'PY'
+import filecmp, os, shutil, sys
+new, old = sys.argv[1:]
+os.makedirs(old, exist_ok=True)
+names = set(os.listdir(new))
+changed = 0
+for n in sorted(names):
+    a, b = os.path.join(new, n), os.path.join(old, n)
+    if not os.path.isfile(b) or not filecmp.cmp(a, b, shallow=False):
+        shutil.copy2(a, b)
+        changed += 1
+for n in set(os.listdir(old)) - names:
+    os.remove(os.path.join(old, n))
+print(f"generated/default: {changed} of {len(names)} files changed")
+PY
+  rm -rf "$ST"
   echo "$INPUTS" > "$STAMP"
 fi
 echo "codegen: $(ls "$CG"/generated/default/*.cpp | wc -l | tr -d ' ') files in $CG/generated/default, image $CG/image.bin"

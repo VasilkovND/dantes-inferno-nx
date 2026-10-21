@@ -15,10 +15,11 @@
 #   dante/out/sw/dante.nro                    -> sdmc:/switch/dantes-inferno-nx/dantes-inferno-nx.nro
 #   dante/out/shaders/dante_shaders.dslib     -> beside it
 #   dante/out/shaders/shadercache_dksh.bin    -> beside it
+# SD=<folder> also copies those three there when they changed (for example SD=for_sd/switch/dantes-inferno-nx).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-[ $# -eq 1 ] || { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+[ $# -eq 1 ] || { sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 GAME="$1"
 export DEVKITPRO="${DEVKITPRO:-/opt/devkitpro}"
 export PATH="$DEVKITPRO/tools/bin:$PATH"
@@ -65,3 +66,10 @@ fi
 echo "== build ($JOBS jobs)"
 cmake --build dante/out/sw -j "$JOBS"
 ls -la dante/out/sw/dante.nro dante/out/shaders/dante_shaders.dslib dante/out/shaders/shadercache_dksh.bin
+if [ -n "${SD:-}" ]; then
+  mkdir -p "$SD"
+  for f in sw/dante.nro:dantes-inferno-nx.nro shaders/dante_shaders.dslib:dante_shaders.dslib \
+           shaders/shadercache_dksh.bin:shadercache_dksh.bin; do
+    cmp -s "dante/out/${f%%:*}" "$SD/${f##*:}" || { cp "dante/out/${f%%:*}" "$SD/${f##*:}"; echo "== copied ${f##*:} to $SD"; }
+  done
+fi
