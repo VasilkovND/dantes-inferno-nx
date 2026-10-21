@@ -4,11 +4,14 @@ Dante's Inferno (Xbox 360, Title Update 2) on the Nintendo Switch, as a homebrew
 [ds2-nx](https://github.com/VasilkovND/ds2-nx) (Dead Space 2): same studio (Visceral), same engine family and EA
 libraries, same route. Its PORTING.md is the reference for everything this file does not repeat.
 
-## Status (0.1.0, in development)
+## Status (1.0.0)
 
-Boots, renders and plays on the console (tested with CPU 1785 MHz / GPU 768 MHz). The game targets 60 fps and holds it
-in most of what was played; it drops to 45-48 fps where the CPU is short (3 cores) and to 30 where a frame takes the GPU
-17-20 ms. The FMVs stutter (section 5). Not tested at stock clocks yet.
+Playable, played on the console through the first levels. The game targets 60 fps.
+
+| | Overclocked (CPU 1785 MHz, GPU 768 MHz) | Stock clocks (CPU 1020 MHz, GPU 307 MHz) |
+| --- | --- | --- |
+| Most scenes | 60 fps | 40-55 fps, GPU-bound (16-22 ms a frame) |
+| Heaviest scenes | 45-60 fps | 22-30 fps (33-45 ms a frame on the GPU) |
 
 ## Architecture
 
@@ -146,6 +149,8 @@ inputs, only NaN payloads differ. 2.2-3.3x faster on an M1 core. `dante_skin_nat
 
 ## 7. Not ported yet
 
-- Dead Space 2's other audio hooks (compressor bypass, per-stage timers, `Dac::Process`) and the
-  `EA::Thread::SetThreadPriority` shortcut: those functions differ slightly in this game, so no exact match.
-- Disc swap (one disc here) and the game icon (none from the game).
+- Dead Space 2's per-stage audio timers, its `Dac::Process` hook and the `EA::Thread::SetThreadPriority` shortcut: those
+  functions differ in this game and no clear match was found (the compressor's was: section 4).
+- A lower internal render resolution, the one lever left against the GPU at stock clocks: the renderer keys targets by
+  EDRAM base and pitch and has no scaled mode.
+- Disc swap (one disc here), DLC, and the game icon (none from the game).

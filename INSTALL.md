@@ -1,10 +1,10 @@
-# Установка dantes-inferno-nx 0.1.0 (Dante's Inferno для Nintendo Switch)
+# Установка dantes-inferno-nx 1.0.0 (Dante's Inferno для Nintendo Switch)
 
 dantes-inferno-nx — нативный порт Dante's Inferno (Xbox 360) для Switch в виде homebrew-программы. Готовых файлов не
 распространяется: код игры, шейдеры и программа собираются у вас на компьютере **из вашей собственной копии** (диск
 Xbox 360 и Title Update 2).
 
-> Версия 0.1.0 — в разработке: игра проходится с разгоном (sys-clk), видеоролики пока подтормаживают.
+> С разгоном (sys-clk) игра идёт в 60 fps почти везде; на стоковых частотах 40–55 fps, в самых тяжёлых сценах 22–30.
 
 ## Что понадобится
 
@@ -31,7 +31,7 @@ Xbox 360 и Title Update 2).
 ## Шаг 2. Подготовить файлы игры
 
 ```
-git clone --recursive https://github.com/VasilkovND/dantes-inferno-nx
+git clone --recursive --branch v1.0.0 https://github.com/VasilkovND/dantes-inferno-nx
 cd dantes-inferno-nx
 python3 dante/tools/stage_sd.py --disc "<путь к ISO>" --tu "<путь к TU_12K226F_000000C000000.00000000000G3>" -o sd/dantes-inferno-nx
 ```
@@ -72,6 +72,9 @@ sdmc:/switch/dantes-inferno-nx/
 2. Выберите **Dante's Inferno**.
 
 Счётчик FPS: **ZL + ZR + вверх на крестовине**.
+
+Язык игры по умолчанию английский. Для немецкого или итальянского положите рядом с программой файл `dante.toml` со
+строкой `user_language = 3` (немецкий) или `user_language = 6` (итальянский); это пока не проверялось.
 
 Если игра покажет шейдер, которого нет в библиотеке, программа сохранит его в `shaders_dump/` рядом с собой: пришлите
 эту папку и `logs/` разработчику.

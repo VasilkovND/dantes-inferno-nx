@@ -10,9 +10,9 @@ as a homebrew NRO, and frames are drawn by a native deko3d renderer from the gam
 > You need your own copy of the game (the disc and Title Update 2). This repository contains no game data or game
 > code: the code, the shaders and the NRO are all made on your computer from your copy.
 
-Status: **0.1.0, in development** — plays on the console when overclocked (60 fps in most scenes, drops in heavy
-ones); the FMVs stutter. Installation: [INSTALL.md](INSTALL.md). Details and
-history in [dante/PORTING.md](dante/PORTING.md).
+Status: **1.0.0** — playable. Overclocked: 60 fps (the game's cap) in most scenes; stock clocks: 40-55 fps, the GPU
+bounding it. Installation: [INSTALL.md](INSTALL.md); what changed and the known issues: [CHANGELOG.md](CHANGELOG.md);
+details in [dante/PORTING.md](dante/PORTING.md).
 
 ## Layout
 
