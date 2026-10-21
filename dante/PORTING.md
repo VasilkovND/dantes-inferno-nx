@@ -99,12 +99,20 @@ What came of run 2 (`sdk-patches/0008`, `dksh_variants.txt`):
 
 ## 5. Videos
 
-The FMVs are VP6, decoded in software by the game on its `Job Manager` thread, which sits at ~95 % of a core for the
-whole video (Presentation ~85 %, MoviePlayer2 ~30 %, the ring thread ~30 % uploading the frames). From the texture
-uploads, about 16-19 decoded frames per second. Same open problem as Dead Space 2 (same EA VP6 decoder). The decoder's
-functions are named in `codegen/names.toml` (31, matched to Dead Space 2's by instruction sequence; `VP6_DecodeBlock` is
-0x82697A00) for a stack profile taken during a video, which decides between native NEON versions of the hottest
-functions and decoding the frames with FFmpeg's VP6.
+The FMVs are EA VP6, 1280x720 at 29.97 fps (34 movies in bigfile0). The game decodes them on its `Job Manager` thread;
+recompiled, its decoder made ~18 frames a second with that thread at 95 % of a core (run 4's stack profile, taken during
+a video with the VP6 functions named: `VP6_DecodeBlock` 0x82697A00 and its motion filters 0x8269C1F8 / 0x8269C2A8 are
+nearly all of it; float IDCT on VMX).
+
+- Registers in locals (`tools/localize_regs.py`, a copy of a function with the guest registers as local variables) was
+  tried first and checked on the Mac against the original with random inputs (identical registers and memory in 40
+  runs): ×1.02 on warm data with clang. The context is `__restrict`; the cost is the VMX code itself. Not used.
+- FFmpeg's VP6 (`sdk-patches/0009` adds it to the SDK's FFmpeg) decodes these movies at ~1.1 ms a frame on one Mac
+  core. `src/dante_video.cpp` hooks `VP6_DecodeFrameMbs` (0x826974D0, the macroblock pass, named in `codegen/names.toml`):
+  at a frame's first row it decodes the whole frame into the game's frame buffer and marks every row done; the header
+  parse and the buffer rotation stay the game's. The first frame of each decoder instance is decoded by both and
+  compared (as is and upside down) to learn the buffer's orientation and check the layout; a video whose pictures do
+  not match stays with the game's decoder. `dante_vp6_ffmpeg=false` turns it off.
 
 ## 6. Not ported yet
 

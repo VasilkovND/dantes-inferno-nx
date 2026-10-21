@@ -1,0 +1,51 @@
+diff -ru a/switch/overlay/FFmpeg/config_nfsmw_wmv3.h b/switch/overlay/FFmpeg/config_nfsmw_wmv3.h
+--- a/switch/overlay/FFmpeg/config_nfsmw_wmv3.h
++++ b/switch/overlay/FFmpeg/config_nfsmw_wmv3.h
+@@ -49,3 +49,17 @@
+ #define CONFIG_FDCTDSP 1
+ #undef CONFIG_WMV2DSP
+ #define CONFIG_WMV2DSP 1
++
++/*
++ * Dante's Inferno (dantes-inferno-nx): the VP6 decoder for the game's FMVs (EA VP6, 1280x720), which the game's own
++ * decoder, recompiled, cannot run in real time. vp6_decoder_select = "h264chroma hpeldsp huffman videodsp vp3dsp
++ * vp56dsp"; h264chroma, hpeldsp and videodsp are on above.
++ */
++#undef CONFIG_VP6_DECODER
++#define CONFIG_VP6_DECODER 1
++#undef CONFIG_HUFFMAN
++#define CONFIG_HUFFMAN 1
++#undef CONFIG_VP3DSP
++#define CONFIG_VP3DSP 1
++#undef CONFIG_VP56DSP
++#define CONFIG_VP56DSP 1
+diff -ru a/thirdparty/CMakeLists.txt b/thirdparty/CMakeLists.txt
+--- a/thirdparty/CMakeLists.txt
++++ b/thirdparty/CMakeLists.txt
+@@ -695,6 +695,15 @@
+     ${FFMPEG_DIR}/libavcodec/videodsp.c
+     ${FFMPEG_DIR}/libavcodec/pixblockdsp.c
+     ${FFMPEG_DIR}/libavcodec/startcode.c
++    # Dante's Inferno: the VP6 decoder (FMVs) and what it selects
++    ${FFMPEG_DIR}/libavcodec/vp6.c
++    ${FFMPEG_DIR}/libavcodec/vp6dsp.c
++    ${FFMPEG_DIR}/libavcodec/vp56.c
++    ${FFMPEG_DIR}/libavcodec/vp56data.c
++    ${FFMPEG_DIR}/libavcodec/vp56dsp.c
++    ${FFMPEG_DIR}/libavcodec/vp56rac.c
++    ${FFMPEG_DIR}/libavcodec/vp3dsp.c
++    ${FFMPEG_DIR}/libavcodec/huffman.c
+ )
+ 
+ # Windows-specific source
+diff -ru a/thirdparty/ffmpeg-overlay/codec_list.c b/thirdparty/ffmpeg-overlay/codec_list.c
+--- a/thirdparty/ffmpeg-overlay/codec_list.c
++++ b/thirdparty/ffmpeg-overlay/codec_list.c
+@@ -17,4 +17,7 @@
+ #if CONFIG_WMV3_DECODER
+     &ff_wmv3_decoder,
+ #endif
++#if CONFIG_VP6_DECODER
++    &ff_vp6_decoder,
++#endif
+     NULL};

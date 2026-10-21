@@ -61,6 +61,12 @@ for p in "$ROOT"/dante/sdk-patches/*.patch; do
   echo "$entry" >> "$APPLIED"
 done
 
+# sdk/tools/switch_setup.py copied the SDK's Switch overlay (sdk/switch/overlay/: FFmpeg's configuration) into
+# sdk/thirdparty/ before the patches above; a patch that changes the overlay (0009, the VP6 decoder) is copied again.
+(cd sdk/switch/overlay && find . -type f) | while read -r f; do
+  cmp -s "sdk/switch/overlay/$f" "sdk/thirdparty/$f" || { cp "sdk/switch/overlay/$f" "sdk/thirdparty/$f"; echo "== overlay: $f"; }
+done
+
 "$ROOT/dante/tools/codegen.sh" "$GAME"
 if [ ! -f dante/out/shaders/shadercache_dksh.bin ] || [ "${SHADERS:-0}" = 1 ]; then
   "$ROOT/dante/tools/shaders.sh"

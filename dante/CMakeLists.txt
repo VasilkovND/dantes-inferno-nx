@@ -30,6 +30,7 @@ add_executable(dante
     src/dante_shaders.cpp
     src/dante_audio.cpp
     src/dante_cpu.cpp
+    src/dante_video.cpp
     # The shader library reader, shared with the PC tools (shaders/).
     ${CMAKE_CURRENT_SOURCE_DIR}/../shaders/ds_shader_library.cpp
 )
@@ -37,7 +38,10 @@ add_executable(dante
 dante_setup_target(dante)
 rexglue_switch_add_deko3d(dante)
 target_compile_definitions(dante PRIVATE DANTE_DEKO3D=1)
-target_include_directories(dante PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../shaders ${REXSDK_DIR}/thirdparty/xxHash)
+target_include_directories(dante PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../shaders ${REXSDK_DIR}/thirdparty/xxHash
+                           ${REXSDK_DIR}/thirdparty/FFmpeg)
+# The VP6 decoder for the FMVs (src/dante_video.cpp, sdk-patches/0009).
+target_link_libraries(dante PRIVATE libavcodec libavutil)
 
 # The version (Homebrew Menu and the first lines of the log) and the commit it was built from, so a log a player sends
 # says which build made it. The commit is read when CMake configures (build_mac.sh RECONFIGURE=1 refreshes it).

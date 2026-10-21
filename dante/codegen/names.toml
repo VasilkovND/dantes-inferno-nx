@@ -127,3 +127,9 @@ name = "VP6_BuildDCUnpackLookupTable"
 
 [entrypoint.functions.0x8269DEF8]
 name = "VP6_CreateCodeArray"
+
+# The VP6 decoder's macroblock pass (dante_video.cpp): one frame's macroblock rows, from the row in pbi+19300, into the
+# frame buffer at pbi+492. Found by reading its callers (VP6_DecodeFrameToYUV_internal 0x82693F78 and the decode job
+# 0x82694278) and its row loop; no exact counterpart in Dead Space 2's names (58 % alike).
+[entrypoint.functions.0x826974D0]
+name = "VP6_DecodeFrameMbs"
