@@ -31,6 +31,7 @@ add_executable(dante
     src/dante_audio.cpp
     src/dante_cpu.cpp
     src/dante_video.cpp
+    src/dante_skin.cpp
     # The shader library reader, shared with the PC tools (shaders/).
     ${CMAKE_CURRENT_SOURCE_DIR}/../shaders/ds_shader_library.cpp
 )

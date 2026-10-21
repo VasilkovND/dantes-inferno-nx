@@ -114,7 +114,37 @@ nearly all of it; float IDCT on VMX).
   compared (as is and upside down) to learn the buffer's orientation and check the layout; a video whose pictures do
   not match stays with the game's decoder. `dante_vp6_ffmpeg=false` turns it off.
 
-## 6. Not ported yet
+### Orientation
+
+The game's buffer holds each frame upside down against FFmpeg's picture, three ways: FFmpeg's VP6 (not VP6F) decodes
+with `flip = -1`, the bitstream's first macroblock row being the picture's bottom row; the game's row pass (0x8269C360)
+addresses a row as `frame + (16 * row - 48) * stride` with a positive stride, so that first row is at the start of the
+buffer; and session 5, which wrote FFmpeg's picture as it is (its calibration decided on a black frame), showed the
+videos upside down. So frames are written mirrored (`dante_vp6_comprobar=true` compares with the game's decoder again).
+FFmpeg takes 4.5-9 ms a frame overclocked, 12-20 at stock, of the 33 a frame lasts.
+
+## 6. Stock clocks (CPU 1020 MHz, GPU 307 MHz)
+
+Session 5: 38-50 fps in ordinary scenes, 22-25 in the heaviest. Mostly the GPU: 16-22 ms a frame (scene pass 9-14, up
+to 25; copies 3.5-6.3; passes without depth 1.5-9). No supersampling: the scene is 1280x720 at 1x; only clears and a
+quarter-size (640x360) pass are 4x multisampled, drawn as their 1x alias. On the CPU the game's Presentation thread is
+at 84 % (up to 97 %).
+
+### Skinning
+
+About an eighth of the Presentation thread, and a share of the EARS job workers, is the game's CPU skinning: three VMX
+loops, 4, 3 and 1 bones per vertex (0x825B6E80, 0x825B6BC8, 0x825B6778, named SkinVerts4/3/1 in `codegen/names.toml`).
+Each blends its bone matrices (64 bytes, three rows), moves the position (w = 1), normal and tangent, renormalises and
+packs the last two to signed bytes (x128, truncated, clamped), writes 20 bytes per vertex and grows a bounding box; it
+also zeroes the cache line 128 bytes ahead (dcbzl) and saves its registers on the stack.
+
+`src/dante_skin_impl.h` does the same per vertex with the same vector operations (the simde calls the codegen emits, in
+host layout) in registers, without the software pipelining, the context round trips and the byte-at-a-time stores
+(stvlx / stvrx). `tools/skin_test.py` builds both for the Mac and compares them on random inputs in a 4 GB guest space:
+every touched page and the non-volatile registers. 3,000 runs each: identical; with raw bit patterns (NaNs) in the
+inputs, only NaN payloads differ. 2.2-3.3x faster on an M1 core. `dante_skin_nativo=false` runs the recompiled loops.
+
+## 7. Not ported yet
 
 - Dead Space 2's other audio hooks (compressor bypass, per-stage timers, `Dac::Process`) and the
   `EA::Thread::SetThreadPriority` shortcut: those functions differ slightly in this game, so no exact match.

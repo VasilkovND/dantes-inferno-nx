@@ -133,3 +133,14 @@ name = "VP6_CreateCodeArray"
 # 0x82694278) and its row loop; no exact counterpart in Dead Space 2's names (58 % alike).
 [entrypoint.functions.0x826974D0]
 name = "VP6_DecodeFrameMbs"
+
+# Vertex skinning (dante_skin.cpp): four bones per vertex, position, normal and tangent. Identified by reading it (the
+# matrix blend, the packed normal and tangent, the bounding box); the names are ours.
+[entrypoint.functions.0x825B6E80]
+name = "SkinVerts4"
+
+[entrypoint.functions.0x825B6BC8]
+name = "SkinVerts3"
+
+[entrypoint.functions.0x825B6778]
+name = "SkinVerts1"
