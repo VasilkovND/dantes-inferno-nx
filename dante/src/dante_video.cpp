@@ -16,10 +16,11 @@
 // border), U and V at frame + pbi[456 / 460] + 24 * uv_stride + 24 with uv_stride pbi[392]; width and height pbi[380]
 // and pbi[384].
 //
-// The first frame of each decoder instance is decoded by both: the game's output is compared with FFmpeg's, as it is and
-// upside down (VP6 codes frames bottom up, and which way this buffer holds them is the game's business). The closer one
-// is used from then on if it is close (FFmpeg's integer IDCT and the game's float one differ by rounding); if neither is,
-// that video stays with the game's decoder, as before. dante_vp6_ffmpeg=false turns it all off.
+// The first frames of the first video are decoded by both: the game's output is compared with FFmpeg's, as it is and
+// upside down (VP6 codes frames bottom up, and which way this buffer holds them is the game's business), until a frame
+// tells the two apart (a uniform one, like the logos' black first frames, does not). The orientation it tells is used
+// for that video and every later one (FFmpeg's integer IDCT and the game's float one differ by rounding only). A video
+// whose pictures keep disagreeing stays with the game's decoder, as before. dante_vp6_ffmpeg=false turns it all off.
 
 #include "dantes_inferno_pch.h"
 
@@ -50,8 +51,13 @@ namespace {
 // Fields of the game's decoder instance (pbi).
 constexpr uint32_t kDatos = 268, kAncho = 380, kAlto = 384, kPasoY = 388, kPasoUV = 392, kDespY = 452, kDespU = 456,
                    kDespV = 460, kNuevo = 492, kFila = 19300;
-// Mean absolute difference of Y (0-255) under which the game's frame and FFmpeg's are the same picture.
+// Mean absolute difference of Y (0-255) under which the game's frame and FFmpeg's are the same picture, and how much
+// worse the other orientation must be for a frame to tell which one it is: a uniform frame (the black first frames of
+// the logo videos) looks the same both ways and tells nothing.
 constexpr double kParecido = 3.0;
+constexpr double kSeparacion = 4.0;
+// Frames the game's picture and FFmpeg's may disagree before a video stays with the game's decoder.
+constexpr uint32_t kDesacuerdos = 5;
 
 enum class Modo { kSinCalibrar, kFFmpeg, kFFmpegVolteado, kJuego };
 
@@ -62,6 +68,7 @@ struct Decodificador {
   Modo modo = Modo::kSinCalibrar;
   std::vector<uint8_t> paquete;
   uint64_t cuadros = 0, errores = 0;
+  uint32_t calibrando = 0, desacuerdos = 0;
   double ms = 0;
 
   Decodificador() {
@@ -95,6 +102,8 @@ struct Decodificador {
 
 std::mutex g_candado;
 std::unordered_map<uint32_t, std::unique_ptr<Decodificador>> g_decodificadores;  // by pbi
+// The orientation, once one video has told it: the same buffer code for every video, so later ones start with FFmpeg.
+Modo g_orientacion = Modo::kSinCalibrar;
 
 // The frame's bytes: the EA chunk ("MV0K" key frame, "MV0F" other, little-endian size with its 8-byte header) when the
 // data sits right after its header; otherwise as far as its memory region goes, at most 1 MB (VP6 reads only what the
@@ -200,24 +209,37 @@ REX_EXTERN(VP6_DecodeFrameMbs) {
   const double ms = AhoraMs() - t0;
   const Planos pl = PlanosDe(base, pbi);
 
+  if (d->modo == Modo::kSinCalibrar && g_orientacion != Modo::kSinCalibrar && ok && Encaja(pl, d->f)) {
+    d->modo = g_orientacion;
+    REXLOG_INFO("[video] VP6 {:08X} {}x{}: FFmpeg{}, como el primer video", pbi, pl.ancho, pl.alto,
+                g_orientacion == Modo::kFFmpegVolteado ? ", volteado" : "");
+  }
   if (d->modo == Modo::kSinCalibrar) {
     // The game's decoder does this frame, all rows; then both pictures are compared.
     ctx.r4.u64 = ~uint64_t(0);
     __imp__VP6_DecodeFrameMbs(ctx, base);
+    ++d->calibrando;
     if (!ok || !Encaja(pl, d->f)) {
       REXLOG_WARN("[video] VP6 {:08X}: FFmpeg {} ({}x{} contra {}x{}, pasos {} {}): sigue el descodificador del juego", pbi,
-                  ok ? "no encaja" : "no descodifica el primer cuadro", d->f->width, d->f->height, pl.ancho, pl.alto,
+                  ok ? "no encaja" : "no descodifica el cuadro", d->f->width, d->f->height, pl.ancho, pl.alto,
                   pl.paso_y, pl.paso_uv);
       d->modo = Modo::kJuego;
       return;
     }
     const double recto = Diferencia(base, pl, d->f, false), volteado = Diferencia(base, pl, d->f, true);
     const bool usar_volteado = volteado < recto;
-    const double mejor = std::min(recto, volteado);
-    d->modo = mejor < kParecido ? (usar_volteado ? Modo::kFFmpegVolteado : Modo::kFFmpeg) : Modo::kJuego;
-    REXLOG_INFO("[video] VP6 {:08X} {}x{} ({} bytes el primer cuadro{}): diferencia media con el del juego {:.2f} recto, "
-                "{:.2f} volteado -> {}",
-                pbi, pl.ancho, pl.alto, bytes, clave ? ", clave" : "", recto, volteado,
+    const double mejor = std::min(recto, volteado), peor = std::max(recto, volteado);
+    if (mejor < kParecido && peor - mejor >= kSeparacion) {
+      d->modo = usar_volteado ? Modo::kFFmpegVolteado : Modo::kFFmpeg;
+      g_orientacion = d->modo;
+    } else if (mejor >= kParecido && ++d->desacuerdos >= kDesacuerdos) {
+      d->modo = Modo::kJuego;
+    } else {
+      return;  // a uniform frame (or one disagreement): the next frame is compared too
+    }
+    REXLOG_INFO("[video] VP6 {:08X} {}x{} (cuadro {}, {} bytes{}): diferencia media con el del juego {:.2f} recto, {:.2f} "
+                "volteado -> {}",
+                pbi, pl.ancho, pl.alto, d->calibrando, bytes, clave ? ", clave" : "", recto, volteado,
                 d->modo == Modo::kJuego ? "descodificador del juego" : (usar_volteado ? "FFmpeg, volteado" : "FFmpeg"));
     return;
   }
