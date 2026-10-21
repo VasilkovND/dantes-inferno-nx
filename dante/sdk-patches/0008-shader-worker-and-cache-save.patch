@@ -1,0 +1,110 @@
+diff -ru a/include/rex/x360/deko/render.h b/include/rex/x360/deko/render.h
+--- a/include/rex/x360/deko/render.h
++++ b/include/rex/x360/deko/render.h
+@@ -561,6 +561,9 @@
+   };
+   std::unordered_map<ClaveCargado, std::unique_ptr<DkShader>, HashCargado> cargados_;  // nullptr: failed
+   deko::CacheDksh cache_;
++  // Only what this console compiled (and its earlier sessions): what cache/nfsmw_dksh.bin holds. The PC tool's cache next
++  // to the NRO is not written back, so a save is a few hundred KB, not the whole merged cache.
++  deko::CacheDksh cache_consola_;
+   bool cache_sucia_ = false;
+   std::thread guardando_;  // writes the cache file (GuardarCacheSiHaceFalta)
+   uint64_t cache_guardada_ns_ = 0;
+diff -ru a/src/ui/deko3d/compilador.cpp b/src/ui/deko3d/compilador.cpp
+--- a/src/ui/deko3d/compilador.cpp
++++ b/src/ui/deko3d/compilador.cpp
+@@ -16,7 +16,12 @@
+ 
+ namespace {
+ constexpr size_t kPila = 8u << 20;
+-constexpr int kPrioridad = 0x3B;
++// The lowest a thread of the game's process can have: the worker compiles background variants (a few seconds of a core
++// each) in the time the game leaves free, instead of taking a third of the three cores from it at the same priority.
++// The ring thread does not wait for it: it draws with a fallback variant meanwhile. A compile the caller waits for
++// (Compilar) raises it to kPrioridadEspera until it is done.
++constexpr int kPrioridad = 0x3F;
++constexpr int kPrioridadEspera = 0x2C;  // the ring thread's
+ 
+ // A shader that uses what the game's do (a UBO, a texture, a dynamic loop), to know at start that uam works here.
+ constexpr char kAutoprueba[] = R"(#version 460
+@@ -108,7 +113,14 @@
+   std::promise<Resultado> promesa;
+   std::future<Resultado> futuro = promesa.get_future();
+   Encolar(vertices, std::move(glsl), [&promesa](Resultado r) { promesa.set_value(std::move(r)); });
++#if defined(__SWITCH__)
++  svcSetThreadPriority(datos_->hilo.handle, kPrioridadEspera);
++  Resultado r = futuro.get();
++  svcSetThreadPriority(datos_->hilo.handle, kPrioridad);
++  return r;
++#else
+   return futuro.get();
++#endif
+ }
+ 
+ uint32_t Compilador::Pendientes() const {
+diff -ru a/src/x360/deko/destinos.cpp b/src/x360/deko/destinos.cpp
+--- a/src/x360/deko/destinos.cpp
++++ b/src/x360/deko/destinos.cpp
+@@ -406,7 +406,11 @@
+       continue;
+     }
+     size_t nuevas = 0;
++    const bool de_la_consola = ruta == RutaCache();
+     for (const auto& [clave, dksh] : leida.entradas()) {
++      if (de_la_consola) {
++        cache_consola_.Anadir(clave, dksh);
++      }
+       if (!cache_.Buscar(clave)) {
+         cache_.Anadir(clave, dksh);
+         ++nuevas;
+@@ -2134,9 +2138,10 @@
+   cache_sucia_ = false;
+   cache_guardada_ns_ = ahora;
+   // Serialized here (the ring thread owns the cache), written on another thread: ~2 MB to the SD card would be a
+-  // stutter.
+-  auto datos = std::make_shared<std::vector<uint8_t>>(cache_.Serializar());
+-  const size_t entradas = cache_.size();
++  // stutter. Only this console's own entries: the whole merged cache (30 MB with the PC tool's) took the ring thread a
++  // copy of it and the SD card a 30 MB write every 20 s while new variants compiled.
++  auto datos = std::make_shared<std::vector<uint8_t>>(cache_consola_.Serializar());
++  const size_t entradas = cache_consola_.size();
+   auto escribir = [datos, entradas] {
+     std::error_code error;
+     const std::filesystem::path ruta = RutaCache();
+diff -ru a/src/x360/deko/dibujos.cpp b/src/x360/deko/dibujos.cpp
+--- a/src/x360/deko/dibujos.cpp
++++ b/src/x360/deko/dibujos.cpp
+@@ -942,6 +942,8 @@
+     // compiles on the worker; it is not remembered here, so the next draw looks in the cache again.
+     const uint64_t h = XXH3_64bits(&clave_cache, sizeof(clave_cache));
+     if (en_fondo_.emplace(h, true).second) {
++      // Each one logged (once per session): the variants the PC tool's cache lacks, to add them there.
++      REXLOG_INFO("[deko3d] {} no esta en la cache: se compila en segundo plano (huella {:016X})", nombre, info.huella);
+       const deko::GlslDeko g = deko::SpirvAGlsl(entrada.spirv, espec, variante);
+       if (!g.glsl.empty()) {
+         std::weak_ptr<Bandeja> bandeja = bandeja_;
+@@ -964,6 +966,7 @@
+     // depth only changes speed) or, for the glow, the game's own bright pass for a few frames.
+     const uint64_t h = XXH3_64bits(&clave_cache, sizeof(clave_cache));
+     if (en_fondo_.emplace(h, true).second) {
++      REXLOG_INFO("[deko3d] {} no esta en la cache: se compila en segundo plano (huella {:016X})", nombre, info.huella);
+       deko::GlslDeko g = deko::SpirvAGlsl(espirv, espec, kTodasLasSalidas);
+       if (!g.glsl.empty()) {
+         if (variante_ps & kVarianteZTemprana) {
+@@ -1007,6 +1010,7 @@
+                 double(deko::AhoraNs() - inicio) / 1e6, r.dksh.size());
+   }
+   cache_.Anadir(clave_cache, r.dksh);
++  cache_consola_.Anadir(clave_cache, r.dksh);
+   cache_sucia_ = true;
+   return cargar(r.dksh);
+ }
+@@ -1021,6 +1025,7 @@
+     bandeja_->fallidas = 0;
+   }
+   for (auto& [clave, dksh] : hechas) {
++    cache_consola_.Anadir(clave, dksh);
+     cache_.Anadir(clave, std::move(dksh));
+     ++compilados_en_fondo_;
+     cache_sucia_ = true;

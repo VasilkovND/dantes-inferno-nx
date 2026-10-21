@@ -16,3 +16,8 @@ name = "rw__audio__core__MixWithGain"
 
 [entrypoint.functions.0x82435918]
 name = "rw__audio__core__CopyWithGain"
+
+# The final compressor of the mix (dante_audio.cpp): not byte for byte DS2's, but the same code with other constant
+# and branch addresses (91 of 92 instructions, next to Compressor1's other functions, which match exactly).
+[entrypoint.functions.0x824463B8]
+name = "rw__audio__core__Compressor1__Process"

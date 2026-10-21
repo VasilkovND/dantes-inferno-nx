@@ -15,5 +15,6 @@ mkdir -p "$OUT/bin"
 clang++ -std=c++20 -O2 -I"$ROOT/sdk/thirdparty/xxHash" "$ROOT/shaders/di_extract_shaders.cpp" -o "$OUT/bin/di_extract_shaders"
 rm -rf "$OUT/shaders_extracted"
 "$OUT/bin/di_extract_shaders" "$OUT/shaders_extracted" "$IMAGE"
-DKSH=1 "$ROOT/shaders/build_library.sh" "$OUT/shaders_extracted" "$OUT/shaders"
+# The variants the console compiled in the background in earlier sessions (tools/dksh_variants.py) go in the cache too.
+DKSH=1 VARIANTES="$ROOT/dante/dksh_variants.txt" "$ROOT/shaders/build_library.sh" "$OUT/shaders_extracted" "$OUT/shaders"
 ls -la "$OUT/shaders/dante_shaders.dslib" "$OUT/shaders/shadercache_dksh.bin"

@@ -1,0 +1,4 @@
+# DKSH variants beyond ds_dksh's default set that Dante's Inferno asks for on the console: each line is the renderer's
+# cache key, SPIR-V fingerprint (HuellaSpirv), specialization value and variant (a vertex shader's kept interpolators, a
+# pixel shader's 1 for early depth), in hex. Made from console logs by tools/dksh_variants.py; tools/shaders.sh compiles
+# them into shadercache_dksh.bin, so the console does not compile them while the game runs.

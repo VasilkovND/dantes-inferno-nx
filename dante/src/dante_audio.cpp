@@ -1,10 +1,15 @@
 // dantes-inferno-nx - lighter audio for the Switch's CPU.
 //
 // Dante's Inferno mixes with the same RenderWare Audio (rwaudiocore) as Dead Space 2, where the mixer thread was the
-// heaviest after the game's own. MixWithGain and CopyWithGain are byte for byte the same functions in both games, so
-// their NEON versions carry over (dante/codegen/names.toml gives them their names). Dead Space 2's other audio hooks
-// (the final compressor's bypass, the per-stage timers) target functions that differ slightly in this game: not
-// ported until a profile here says they are worth it.
+// heaviest after the game's own; here too it takes 25-40 % of a core in fights (RwAudioCore Dac), plus the XMA decoder.
+// dante/codegen/names.toml names the functions hooked here: MixWithGain and CopyWithGain are byte for byte Dead
+// Space 2's, Compressor1::Process the same code at other addresses. Dead Space 2's per-stage timers are not ported.
+//
+// The final compressor (rw::audio::core::Compressor1::Process and the CompressorLimiter1 loop it calls) was a third of
+// Dead Space 2's mixer: per-sample gain in dB through VMX log/exp estimates, translated to scalar code. It has its own
+// bypass: with its threshold at 0 dB or its ratio at 1 it leaves the mixer's buffer as it is (it works in place), clears
+// its state and returns 1. dante_audio_sin_compresor takes that path always. What is lost is the dynamics compression
+// of the final mix: loud moments are not squeezed (the output is still clamped).
 
 #include "dantes_inferno_pch.h"
 
@@ -15,6 +20,26 @@
 #if defined(__aarch64__)
 #include <arm_neon.h>
 #endif
+
+#include <rex/logging.h>
+
+REXCVAR_DEFINE_BOOL(dante_audio_sin_compresor, true, "Dante",
+                    "Saltarse el compresor final del audio del juego (su propio camino de bypass): parte del hilo de "
+                    "mezcla. false = el sonido original, mas CPU");
+
+REX_EXTERN(__imp__rw__audio__core__Compressor1__Process);
+REX_EXTERN(rw__audio__core__Compressor1__Process) {
+  if (REXCVAR_GET(dante_audio_sin_compresor)) {
+    static bool avisado = false;
+    if (!avisado) {
+      avisado = true;
+      REXLOG_INFO("[audio] compresor final del juego desactivado (dante_audio_sin_compresor)");
+    }
+    ctx.r3.u64 = 1;  // what the bypass returns
+    return;
+  }
+  __imp__rw__audio__core__Compressor1__Process(ctx, base);
+}
 
 // ---- Native versions of the mixer's leaf loops. Translated, each 4-float VMX vector goes through byte shuffles and
 // stores in the context; MixWithGain alone runs 100-170 thousand times a second in a fight (about 14 % of a core at

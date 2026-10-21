@@ -38,15 +38,27 @@ if [ ! -f sdk/thirdparty/uam/uam_api.h ]; then
   (cd sdk && python3 tools/switch_setup.py)
 fi
 
-# Fixes to the SDK that the game needs and that are not upstream yet (dante/sdk-patches/).
+# Fixes to the SDK that the game needs and that are not upstream yet (dante/sdk-patches/), in order. Several touch the
+# same files, so a patch already applied cannot always be recognised by reverse-applying it alone once a later one is
+# on top: what was applied is recorded in dante/out/sdk-patches.applied (name and hash). A patch not recorded is
+# applied, or recorded if it is already there (reverse-applies).
+APPLIED="$ROOT/dante/out/sdk-patches.applied"
+mkdir -p "$ROOT/dante/out"
+touch "$APPLIED"
 for p in "$ROOT"/dante/sdk-patches/*.patch; do
   [ -f "$p" ] || continue
-  if git -C sdk apply --reverse --check "$p" 2>/dev/null; then
-    echo "== sdk patch already applied: $(basename "$p")"
-  else
+  entry="$(basename "$p") $(shasum -a 256 "$p" | cut -d' ' -f1)"
+  grep -qxF "$entry" "$APPLIED" && continue
+  if git -C sdk apply --check "$p" 2>/dev/null; then
     echo "== sdk patch: $(basename "$p")"
     git -C sdk apply "$p"
+  elif git -C sdk apply --reverse --check "$p" 2>/dev/null; then
+    echo "== sdk patch already applied: $(basename "$p")"
+  else
+    echo "sdk patch $(basename "$p") does not apply to sdk/ (changed by hand, or an older version of it applied?)"
+    exit 1
   fi
+  echo "$entry" >> "$APPLIED"
 done
 
 "$ROOT/dante/tools/codegen.sh" "$GAME"

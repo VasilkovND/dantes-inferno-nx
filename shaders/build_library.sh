@@ -9,6 +9,7 @@
 #   VULKAN_BIN   folder with dxc and spirv-val (default: ~/VulkanSDK/*/macOS/bin)
 #   DKSH=1       also build dksh/ (needs the SDK's thirdparty submodules) and the DKSH cache
 #   JOBS         parallel DXC processes (default: every core)
+#   VARIANTES    a list of extra DKSH variants the console asked for (ds_dksh --variantes)
 # Writes <output>/dante_shaders.dslib (and shadercache_dksh.bin), the HLSL and SPIR-V of each shader, and the
 # errors of the ones that did not compile in <output>/err/. Copy the .dslib and the cache next to the NRO.
 set -euo pipefail
@@ -82,7 +83,8 @@ if [ "${DKSH:-0}" = 1 ]; then
   cmake -S "$shaders/dksh" -B "$salida/build_dksh" -G Ninja -DCMAKE_BUILD_TYPE=Release > "$salida/dksh_cmake.log"
   cmake --build "$salida/build_dksh" > "$salida/dksh_build.log"
   "$salida/build_dksh/ds_dksh" "$salida/dante_shaders.dslib" "$salida/shadercache_dksh.bin" \
-    --contenedores "$contenedores" --informe "$salida/dksh.tsv" > "$salida/dksh.log" 2>&1 ||
+    --contenedores "$contenedores" --informe "$salida/dksh.tsv" ${VARIANTES:+--variantes "$VARIANTES"} \
+    > "$salida/dksh.log" 2>&1 ||
     echo "some variants failed: $salida/dksh.tsv"
   tail -3 "$salida/dksh.log"
 fi

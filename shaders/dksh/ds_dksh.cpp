@@ -75,7 +75,16 @@ struct Variante {
   size_t shader = 0;
   uint32_t especializacion = 0;
   uint32_t salidas = ~0u;
+  bool z_temprana = false;  // pixel shader with layout(early_fragment_tests) (the renderer's kVarianteZTemprana)
 };
+
+// The renderer's DeclararZTemprana (sdk/src/x360/deko/dibujos.cpp), the same text in the same place: the console
+// keys this variant with variante 1 and must find the same DKSH.
+void DeclararZTemprana(std::string& glsl) {
+  size_t pos = glsl.find("\nlayout(");
+  if (pos == std::string::npos) pos = glsl.find("\nvoid main(");
+  glsl.insert(pos == std::string::npos ? glsl.size() : pos + 1, "layout(early_fragment_tests) in;\n");
+}
 
 std::vector<uint32_t> EspecializacionesPorDefecto(bool vertices) {
   // Each value with and without kBase: the NFS renderer always set it, Dead Space 2's draws come without it (the console
@@ -132,9 +141,10 @@ struct Compilado {
 };
 
 Compilado Compilar(const std::vector<uint32_t>& spirv, uint32_t especializacion, uint32_t salidas,
-                   const fs::path& archivo_glsl) {
+                   const fs::path& archivo_glsl, bool z_temprana = false) {
   Compilado c;
-  const rex::deko3d::GlslDeko g = rex::deko3d::SpirvAGlsl(spirv, especializacion, salidas);
+  rex::deko3d::GlslDeko g = rex::deko3d::SpirvAGlsl(spirv, especializacion, salidas);
+  if (z_temprana && !g.glsl.empty()) DeclararZTemprana(g.glsl);
   if (g.glsl.empty()) {
     c.motivo = "conversion: " + g.error;
     return c;
@@ -199,11 +209,11 @@ int main(int argc, char** argv) try {
   if (argc < 3) {
     std::fprintf(stderr,
                  "uso: ds_dksh <dante_shaders.dslib> <cache de salida> [--contenedores DIR]"
-                 " [--glsl DIR] [--informe FICHERO.tsv] [--hilos N] [--limite SEGUNDOS]\n");
+                 " [--glsl DIR] [--informe FICHERO.tsv] [--variantes FICHERO] [--hilos N] [--limite SEGUNDOS]\n");
     return 1;
   }
   const fs::path biblioteca_ruta = argv[1], salida = argv[2];
-  fs::path contenedores, carpeta_glsl, informe;
+  fs::path contenedores, carpeta_glsl, informe, variantes;
   // Processes at once (default: every core) and the time one variant may take before it is killed.
   unsigned hilos = std::max(1u, std::thread::hardware_concurrency());
   double limite_s = 120;
@@ -212,6 +222,7 @@ int main(int argc, char** argv) try {
     if (o == "--contenedores") contenedores = argv[i + 1];
     else if (o == "--glsl") carpeta_glsl = argv[i + 1];
     else if (o == "--informe") informe = argv[i + 1];
+    else if (o == "--variantes") variantes = argv[i + 1];
     else if (o == "--hilos") hilos = std::max(1, std::atoi(argv[i + 1]));
     else if (o == "--limite") limite_s = std::max(1.0, std::atof(argv[i + 1]));
     else throw std::runtime_error("opcion desconocida: " + o);
@@ -286,6 +297,33 @@ int main(int argc, char** argv) try {
                   raro ? " y la usa de otra forma" : "");
     }
   }
+  // --variantes: the variants the console asked for and this cache lacked (the renderer logs each one it compiles in
+  // the background: "VS n891 00000000 0000001F ... (huella 1234...)"), one per line: huella, specialization value and
+  // variant, in hex. A vertex shader's variant is the interpolators it keeps; a pixel shader's, 1 for early depth.
+  if (!variantes.empty()) {
+    std::map<uint64_t, size_t> por_huella;
+    for (size_t i = 0; i < shaders.size(); ++i) por_huella.emplace(rex::deko3d::HuellaSpirv(shaders[i].spirv), i);
+    std::ifstream f(variantes);
+    if (!f) throw std::runtime_error("no se puede leer " + variantes.string());
+    size_t anadidas = 0, sin_shader = 0;
+    for (std::string linea; std::getline(f, linea);) {
+      unsigned long long huella = 0;
+      unsigned espec = 0, variante = 0;
+      if (linea.empty() || linea[0] == '#' || std::sscanf(linea.c_str(), "%llx %x %x", &huella, &espec, &variante) != 3)
+        continue;
+      const auto it = por_huella.find(huella);
+      if (it == por_huella.end()) {
+        ++sin_shader;  // a shader whose SPIR-V has changed since the list was made
+        continue;
+      }
+      if (shaders[it->second].vertices)
+        trabajo.push_back({it->second, espec, variante});
+      else
+        trabajo.push_back({it->second, espec, ~0u, (variante & 1) != 0});
+      ++anadidas;
+    }
+    std::printf("%zu variantes de %s (%zu de shaders que ya no estan)\n", anadidas, variantes.string().c_str(), sin_shader);
+  }
   // The distinct variants. The cache key: the value masked to what the shader reads, and the kept interpolators of
   // a vertex shader.
   struct Tarea {
@@ -298,7 +336,8 @@ int main(int argc, char** argv) try {
     for (const Variante& v : trabajo) {
       const auto& s = shaders[v.shader];
       const rex::deko3d::CacheDksh::Clave clave{rex::deko3d::HuellaSpirv(s.spirv),
-                                               v.especializacion & mascaras[v.shader], s.vertices ? v.salidas : 0u};
+                                               v.especializacion & mascaras[v.shader],
+                                               s.vertices ? v.salidas : (v.z_temprana ? 1u : 0u)};
       if (hechas.insert(clave).second) tareas.push_back({v, clave});
     }
   }
@@ -343,7 +382,7 @@ int main(int argc, char** argv) try {
     const Tarea& t = tareas[i];
     const auto& s = shaders[t.v.shader];
     const auto t0 = std::chrono::steady_clock::now();
-    Compilado c = Compilar(s.spirv, t.clave.especializacion, s.vertices ? t.v.salidas : ~0u, archivo_glsl(t));
+    Compilado c = Compilar(s.spirv, t.clave.especializacion, s.vertices ? t.v.salidas : ~0u, archivo_glsl(t), t.v.z_temprana);
     anotar(i, Resultado::kOk, std::move(c),
            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
   }
@@ -379,7 +418,7 @@ int main(int argc, char** argv) try {
         close(tubo[0]);
         const auto& s = shaders[t.v.shader];
         const std::string d = Serializar(
-            Compilar(s.spirv, t.clave.especializacion, s.vertices ? t.v.salidas : ~0u, archivo_glsl(t)));
+            Compilar(s.spirv, t.clave.especializacion, s.vertices ? t.v.salidas : ~0u, archivo_glsl(t), t.v.z_temprana));
         for (size_t at = 0; at < d.size();) {
           const ssize_t n = write(tubo[1], d.data() + at, d.size() - at);
           if (n <= 0) _exit(3);
