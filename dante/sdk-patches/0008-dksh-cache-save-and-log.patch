@@ -11,38 +11,7 @@ diff -ru a/include/rex/x360/deko/render.h b/include/rex/x360/deko/render.h
    bool cache_sucia_ = false;
    std::thread guardando_;  // writes the cache file (GuardarCacheSiHaceFalta)
    uint64_t cache_guardada_ns_ = 0;
-diff -ru a/src/ui/deko3d/compilador.cpp b/src/ui/deko3d/compilador.cpp
---- a/src/ui/deko3d/compilador.cpp
-+++ b/src/ui/deko3d/compilador.cpp
-@@ -16,7 +16,12 @@
- 
- namespace {
- constexpr size_t kPila = 8u << 20;
--constexpr int kPrioridad = 0x3B;
-+// The lowest a thread of the game's process can have: the worker compiles background variants (a few seconds of a core
-+// each) in the time the game leaves free, instead of taking a third of the three cores from it at the same priority.
-+// The ring thread does not wait for it: it draws with a fallback variant meanwhile. A compile the caller waits for
-+// (Compilar) raises it to kPrioridadEspera until it is done.
-+constexpr int kPrioridad = 0x3F;
-+constexpr int kPrioridadEspera = 0x2C;  // the ring thread's
- 
- // A shader that uses what the game's do (a UBO, a texture, a dynamic loop), to know at start that uam works here.
- constexpr char kAutoprueba[] = R"(#version 460
-@@ -108,7 +113,14 @@
-   std::promise<Resultado> promesa;
-   std::future<Resultado> futuro = promesa.get_future();
-   Encolar(vertices, std::move(glsl), [&promesa](Resultado r) { promesa.set_value(std::move(r)); });
-+#if defined(__SWITCH__)
-+  svcSetThreadPriority(datos_->hilo.handle, kPrioridadEspera);
-+  Resultado r = futuro.get();
-+  svcSetThreadPriority(datos_->hilo.handle, kPrioridad);
-+  return r;
-+#else
-   return futuro.get();
-+#endif
- }
- 
- uint32_t Compilador::Pendientes() const {
+Only in b/src: ui
 diff -ru a/src/x360/deko/destinos.cpp b/src/x360/deko/destinos.cpp
 --- a/src/x360/deko/destinos.cpp
 +++ b/src/x360/deko/destinos.cpp
