@@ -2,12 +2,13 @@
 # Title Update 2's. Each one was found by its body being instruction for instruction the same as the function of
 # that name in Dead Space 2's recompiled code (same XDK and RenderWare Audio libraries).
 
-# XDK Direct3D: every shader the game creates (dante_shader_dump.cpp).
+# XDK Direct3D: every shader the game creates (dante_shader_dump.cpp). With the address in the name: the SDK exports
+# stubs named __imp__D3DDevice_Create*Shader (xam_misc.cpp), and a bare name made the game's function that stub.
 [entrypoint.functions.0x827E8780]
-name = "D3DDevice_CreateVertexShader"
+name = "D3DDevice_CreateVertexShader_827E8780"
 
 [entrypoint.functions.0x827E8598]
-name = "D3DDevice_CreatePixelShader"
+name = "D3DDevice_CreatePixelShader_827E8598"
 
 # RenderWare Audio's mixer leaves (dante_audio.cpp).
 [entrypoint.functions.0x8243D968]

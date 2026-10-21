@@ -4,7 +4,7 @@
 // by a fingerprint of each shader's container. Dead Space 2 keeps its shaders inside the
 // RefPack-compressed entries of bigfile0/1.viv, so scanning the disc for containers finds almost none
 // (129 raw container signatures in 6.6 GB). Every shader, however, goes through the XDK's
-// D3DDevice_CreateVertexShader / D3DDevice_CreatePixelShader with its container already decompressed in
+// D3DDevice_CreateVertexShader_827E8780 / D3DDevice_CreatePixelShader_827E8598 with its container already decompressed in
 // guest memory (r3 = pFunction). Wrapping those two functions catches every shader the game really uses,
 // whatever its archive format, and the container is exactly what XenosRecomp reads.
 //
@@ -112,20 +112,20 @@ void Registrar(PPCContext& ctx, uint32_t container, const rex::x360::EntradaShad
 
 }  // namespace
 
-REX_EXTERN(__imp__D3DDevice_CreateVertexShader);
-REX_EXTERN(D3DDevice_CreateVertexShader) {
+REX_EXTERN(__imp__D3DDevice_CreateVertexShader_827E8780);
+REX_EXTERN(D3DDevice_CreateVertexShader_827E8780) {
   const uint32_t container = ctx.r3.u32;
   const rex::x360::EntradaShader* entrada = Entrada(base, container);
   Dump(base, container, "vs", !entrada);
-  __imp__D3DDevice_CreateVertexShader(ctx, base);
+  __imp__D3DDevice_CreateVertexShader_827E8780(ctx, base);
   Registrar(ctx, container, entrada);
 }
 
-REX_EXTERN(__imp__D3DDevice_CreatePixelShader);
-REX_EXTERN(D3DDevice_CreatePixelShader) {
+REX_EXTERN(__imp__D3DDevice_CreatePixelShader_827E8598);
+REX_EXTERN(D3DDevice_CreatePixelShader_827E8598) {
   const uint32_t container = ctx.r3.u32;
   const rex::x360::EntradaShader* entrada = Entrada(base, container);
   Dump(base, container, "ps", !entrada);
-  __imp__D3DDevice_CreatePixelShader(ctx, base);
+  __imp__D3DDevice_CreatePixelShader_827E8598(ctx, base);
   Registrar(ctx, container, entrada);
 }

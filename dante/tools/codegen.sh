@@ -97,6 +97,12 @@ except OSError:
 open(out, 'w').write(new)
 PY
 cp "$HG/patches/generated/apply_generated_patches.py" "$CG/patches/generated/"
+# A name the SDK already defines as __imp__<name> (its export stubs) would replace the game's function with that stub.
+for n in $(sed -n 's/^name = "\(.*\)"$/\1/p' "$ROOT/dante/codegen/names.toml"); do
+  if grep -rqE "__imp__$n\b" "$ROOT/sdk/src" "$ROOT/sdk/include"; then
+    echo "codegen/names.toml: the SDK already defines __imp__$n; pick another name"; exit 1
+  fi
+done
 
 # 4. Codegen (re-run only when an input changed) and the generated-code fixes.
 STAMP="$CG/inputs.sha"
