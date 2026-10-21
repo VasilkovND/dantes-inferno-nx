@@ -21,3 +21,109 @@ name = "rw__audio__core__CopyWithGain"
 # and branch addresses (91 of 92 instructions, next to Compressor1's other functions, which match exactly).
 [entrypoint.functions.0x824463B8]
 name = "rw__audio__core__Compressor1__Process"
+
+# The VP6 video decoder (the FMVs; the "Job Manager" thread decodes them), for readable stack profiles: each matched
+# to Dead Space 2's PDB-named decoder by its instruction sequence (85-100 % alike, clearly ahead of the next
+# candidate). Only names: no hook.
+
+[entrypoint.functions.0x82693ED8]
+name = "VP6_GetYUVConfig"
+
+[entrypoint.functions.0x82693F78]
+name = "VP6_DecodeFrameToYUV_internal"
+
+[entrypoint.functions.0x82694C38]
+name = "VP6_DeleteTmpBuffers"
+
+[entrypoint.functions.0x82694D68]
+name = "VP6_AllocateTmpBuffers"
+
+[entrypoint.functions.0x826950E8]
+name = "FilterBlock2dBil_8"
+
+[entrypoint.functions.0x826951A8]
+name = "FilterBlockBil_8_C"
+
+[entrypoint.functions.0x82695320]
+name = "VP6_BuildQuantIndex_Generic"
+
+[entrypoint.functions.0x82695358]
+name = "VP6_init_dequantizer"
+
+[entrypoint.functions.0x826955C0]
+name = "VP6_DeleteQuantizer"
+
+[entrypoint.functions.0x82695638]
+name = "VP6_CreateQuantizer"
+
+[entrypoint.functions.0x82695728]
+name = "VP6_DeleteFragmentInfo"
+
+[entrypoint.functions.0x82695BE8]
+name = "VP6_DeleteFrameInfo"
+
+[entrypoint.functions.0x82695CE0]
+name = "VP6_InitFrameDetails"
+
+[entrypoint.functions.0x826964D0]
+name = "VP6_ConfigureContexts"
+
+[entrypoint.functions.0x826965A8]
+name = "VP6_bitread"
+
+[entrypoint.functions.0x82696C70]
+name = "VP6_ConfigureEntropyDecoder"
+
+[entrypoint.functions.0x82696F00]
+name = "VP6_ResetAboveContext"
+
+[entrypoint.functions.0x82697020]
+name = "VP6_ReadTokensPredictA"
+
+[entrypoint.functions.0x82697950]
+name = "VP6_PredictDC"
+
+[entrypoint.functions.0x82697A00]
+name = "VP6_DecodeBlock"
+
+[entrypoint.functions.0x8269A8B8]
+name = "VP6_DecodeMacroBlock"
+
+[entrypoint.functions.0x8269AE60]
+name = "VP6_DecodeBlockMode"
+
+[entrypoint.functions.0x8269AF80]
+name = "VP6_DecodeMode"
+
+[entrypoint.functions.0x8269B4F8]
+name = "VP6_decodeMotionVector"
+
+[entrypoint.functions.0x8269C1F8]
+name = "FilterBlock2dBil_FirstPass_Xenon"
+
+[entrypoint.functions.0x8269C688]
+name = "VP6_BuildModeTree"
+
+[entrypoint.functions.0x8269C8A8]
+name = "VP6_decodeModeDiff"
+
+[entrypoint.functions.0x8269CD20]
+name = "VP6_DecodeModeProbs"
+
+[entrypoint.functions.0x8269CF20]
+name = "VP6_bitread_8269CF20"
+
+[entrypoint.functions.0x8269CFC0]
+name = "VP6_ConfigureMvEntropyDecoder"
+
+[entrypoint.functions.0x8269DA08]
+name = "VP6_BuildHuffTree"
+
+[entrypoint.functions.0x8269DC30]
+name = "VP6_BuildHuffLookupTable"
+
+[entrypoint.functions.0x8269DCB0]
+name = "VP6_BuildDCUnpackLookupTable"
+
+[entrypoint.functions.0x8269DEF8]
+name = "VP6_CreateCodeArray"
