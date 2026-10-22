@@ -1,4 +1,4 @@
-# Установка dantes-inferno-nx 1.0.0 (Dante's Inferno для Nintendo Switch)
+# Установка dantes-inferno-nx 1.0.1 (Dante's Inferno для Nintendo Switch)
 
 dantes-inferno-nx — нативный порт Dante's Inferno (Xbox 360) для Switch в виде homebrew-программы. Готовых файлов не
 распространяется: код игры, шейдеры и программа собираются у вас на компьютере **из вашей собственной копии** (диск
@@ -31,7 +31,7 @@ Xbox 360 и Title Update 2).
 ## Шаг 2. Подготовить файлы игры
 
 ```
-git clone --recursive --branch v1.0.0 https://github.com/VasilkovND/dantes-inferno-nx
+git clone --recursive --branch v1.0.1 https://github.com/VasilkovND/dantes-inferno-nx
 cd dantes-inferno-nx
 python3 dante/tools/stage_sd.py --disc "<путь к ISO>" --tu "<путь к TU_12K226F_000000C000000.00000000000G3>" -o sd/dantes-inferno-nx
 ```

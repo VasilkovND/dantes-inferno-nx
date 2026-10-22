@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.1 (TU2) — 2026-10-22
+
+- **Games on Demand installs run as they are.** Copy the package from the Xbox 360 hard drive
+  (`Content/0000000000000000/454108CF/00007000/`: the header file and its `.data` folder with every `DataNNNN`) into
+  `sdmc:/switch/dantes-inferno-nx/god/`; nothing to extract. The package is read as the disc (`d:`), its `default.xex`
+  loaded from `god_xex/`, which the program fills itself. Tested on the console with the 49028C6A package.
+- **Edition 49028C6A.** Its Games on Demand executable already carries Title Update 2 (0.0.2.1), and its disc
+  executable with its own TU2 loads to the same image byte for byte as the Europe one with its TU2: the same build runs
+  all of them. `tools/stage_sd.py` accepts the 49028C6A disc with `TU_12K226F_0000004000000.00000000000G1`.
+- The SDK's package reader takes one read at a time (`sdk-patches/0010`): the game reads on several threads.
+
 ## 1.0.0 (TU2) — 2026-10-21
 
 First release: Dante's Inferno is playable on the Switch, natively (homebrew NRO). Played on a console from the start
