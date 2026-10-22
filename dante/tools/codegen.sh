@@ -1,8 +1,9 @@
 #!/bin/bash
-# Generate the recompiled C++ of Dante's Inferno (TU2) from your own default.xex + default.xexp, and the executable's
-# memory image the shaders are extracted from. Nothing here is committed: the output is dante/out/codegen/.
+# Generate the recompiled C++ of Dante's Inferno (TU2) from your own executable, and its memory image the shaders are
+# extracted from. Nothing here is committed: the output is dante/out/codegen/.
 #
 #   dante/tools/codegen.sh <folder with default.xex and default.xexp>     (tools/stage_sd.py's game/ folder works)
+#   dante/tools/codegen.sh <Games on Demand install folder>               (its default.xex already has TU2)
 #
 # Steps (each skipped when already done):
 #   1. Hell's Gate (https://github.com/florinp93/hells-gate-recomp), the PC port, at the tested commit: its codegen
@@ -15,7 +16,7 @@
 set -euo pipefail
 
 if [ $# -ne 1 ]; then
-  sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 fi
 GAME=$(cd "$1" && pwd)
@@ -26,15 +27,30 @@ JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN)}"
 
 HELLS_GATE_COMMIT="3ce3993b0f03c77353f8f10fdcd982160c9a2d18"   # 2026-10-16, v0.8.4-beta
 REXGLUE_TAG="v0.10.0"
-XEX_SHA="3840af42c628d0d8d6d98965057893b8bfc7c197479f485fe6f57db8b014b0aa"   # disc default.xex (Europe, 27C36C6C)
-XEXP_SHA="f49c87b8d16ef0eed693c134458ccb2bd05481ef24f38b7c6d60d532163d2290"  # TU2 default.xexp for that disc
+# The executables this build is made and tested from; all load to the same image byte for byte (dante/PORTING.md).
+TESTED="3840af42c628d0d8d6d98965057893b8bfc7c197479f485fe6f57db8b014b0aa+f49c87b8d16ef0eed693c134458ccb2bd05481ef24f38b7c6d60d532163d2290
+abfef19fa03a247ab17d5c011e34ca70a0338f13c15b7fd8932c7ff7d9e2c2e9+0842733820a27e0c902e6a652b3cd71d2c4a05f36db5121c1d342416a6b7ab09
+e905710ce74cf9390e0e23463db16d52968f3c5bf4670f60b966a8d1a6ac4469+"
+#   Europe disc 27C36C6C + its TU2; disc 49028C6A + its TU2; the 49028C6A Games on Demand executable (TU2 in it)
+XEX_YA_TU2="e905710ce74cf9390e0e23463db16d52968f3c5bf4670f60b966a8d1a6ac4469"
 
-for f in default.xex default.xexp; do
-  [ -f "$GAME/$f" ] || { echo "$GAME/$f not found"; exit 1; }
-done
 sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
-if [ "$(sha "$GAME/default.xex")" != "$XEX_SHA" ] || [ "$(sha "$GAME/default.xexp")" != "$XEXP_SHA" ]; then
-  echo "warning: default.xex / default.xexp are not the tested ones (Europe disc 27C36C6C + its TU2); trying anyway"
+mkdir -p "$OUT"
+XEX="$GAME/default.xex"
+XEXP="$GAME/default.xexp"
+if [ ! -f "$XEX" ] && find "$GAME" -name Data0000 -print -quit | grep -q .; then
+  echo "== default.xex from the Games on Demand package"
+  python3 "$ROOT/dante/tools/god_xex.py" "$GAME" "$OUT/god_default.xex"
+  XEX="$OUT/god_default.xex"
+fi
+[ -f "$XEX" ] || { echo "$GAME/default.xex not found"; exit 1; }
+if [ "$(sha "$XEX")" = "$XEX_YA_TU2" ]; then
+  XEXP=""  # Title Update 2 is in it already: no update beside it (patching an updated executable fails)
+elif [ ! -f "$XEXP" ]; then
+  echo "$XEXP not found (Title Update 2 for your disc)"; exit 1
+fi
+if ! printf '%s\n' "$TESTED" | grep -qx "$(sha "$XEX")+${XEXP:+$(sha "$XEXP")}"; then
+  echo "warning: default.xex / default.xexp are not ones this build was tested with (see dante/PORTING.md); trying anyway"
 fi
 
 # 1. Hell's Gate
@@ -78,9 +94,12 @@ fi
 
 # 3. Project folder: the executable (copied: codegen refuses a link out of its game root) and the manifest.
 mkdir -p "$CG/game" "$CG/patches/generated"
-for f in default.xex default.xexp; do
-  cmp -s "$GAME/$f" "$CG/game/$f" || cp "$GAME/$f" "$CG/game/$f"
-done
+cmp -s "$XEX" "$CG/game/default.xex" || cp "$XEX" "$CG/game/default.xex"
+if [ -n "$XEXP" ]; then
+  cmp -s "$XEXP" "$CG/game/default.xexp" || cp "$XEXP" "$CG/game/default.xexp"
+else
+  rm -f "$CG/game/default.xexp"
+fi
 python3 - "$HG/dantes_inferno_manifest.toml" "$ROOT/dante/codegen/names.toml" "$CG/dantes_inferno_manifest.toml" <<'PY'
 import re, sys
 text, extra, out = open(sys.argv[1]).read(), open(sys.argv[2]).read(), sys.argv[3]
@@ -106,7 +125,7 @@ done
 
 # 4. Codegen (re-run only when an input changed) and the generated-code fixes.
 STAMP="$CG/inputs.sha"
-INPUTS=$(cat "$CG/game/default.xex" "$CG/game/default.xexp" "$CG/dantes_inferno_manifest.toml" \
+INPUTS=$(cat "$CG/game/default.xex" $( [ -f "$CG/game/default.xexp" ] && echo "$CG/game/default.xexp") "$CG/dantes_inferno_manifest.toml" \
   "$CG/patches/generated/apply_generated_patches.py" "$REXGLUE" | shasum -a 256 | cut -d' ' -f1)
 if [ "$(cat "$STAMP" 2>/dev/null)" != "$INPUTS" ] || [ ! -f "$CG/generated/default/sources.cmake" ]; then
   # Generated and fixed in a staging folder, then only the files whose text changed are copied over generated/:

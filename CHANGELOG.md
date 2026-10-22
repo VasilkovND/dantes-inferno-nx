@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.2 (TU2) — 2026-10-22
+
+- **Building from a Games on Demand install.** `dante/tools/build_mac.sh` (and `codegen.sh`) take the package folder
+  itself: `default.xex` is read out of its `DataNNNN` pieces (`dante/tools/god_xex.py`), and no `default.xexp` is
+  needed for an executable that already has Title Update 2. The code generated from it is identical to the Europe
+  disc's (only codegen's stamps differ). In 1.0.1 the build still asked for `default.xex` + `default.xexp`.
+- The program is unchanged from 1.0.1 apart from its version.
+
 ## 1.0.1 (TU2) — 2026-10-22
 
 - **Games on Demand installs run as they are.** Copy the package from the Xbox 360 hard drive

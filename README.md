@@ -10,7 +10,7 @@ as a homebrew NRO, and frames are drawn by a native deko3d renderer from the gam
 > You need your own copy of the game (the disc and Title Update 2). This repository contains no game data or game
 > code: the code, the shaders and the NRO are all made on your computer from your copy.
 
-Status: **1.0.1** — playable. Overclocked: 60 fps (the game's cap) in most scenes; stock clocks: 40-55 fps, the GPU
+Status: **1.0.2** — playable. Overclocked: 60 fps (the game's cap) in most scenes; stock clocks: 40-55 fps, the GPU
 bounding it. Installation: [INSTALL.md](INSTALL.md); what changed and the known issues: [CHANGELOG.md](CHANGELOG.md);
 details in [dante/PORTING.md](dante/PORTING.md).
 
@@ -30,7 +30,7 @@ Ninja, Python 3, clang and the [Vulkan SDK](https://vulkan.lunarg.com) (`dxc`, `
 
 ```sh
 python3 dante/tools/stage_sd.py --disc "Dante's Inferno.iso" --tu TU_12K226F_000000C000000.00000000000G3 -o sd/dantes-inferno-nx
-dante/tools/build_mac.sh sd/dantes-inferno-nx/game
+dante/tools/build_mac.sh sd/dantes-inferno-nx/game        # or the Games on Demand install folder
 ```
 
 `build_mac.sh` runs, in order:
