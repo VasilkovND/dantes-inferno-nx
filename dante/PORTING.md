@@ -72,7 +72,7 @@ One disc, extracted to `game/` (the runtime maps both `game:` and `d:` there), w
 
 Games on Demand: `god/` next to the NRO may hold the package as the Xbox 360 hard drive has it (header file and
 `<name>.data/DataNNNN`). `src/dante_god.cpp` mounts it with the SDK's `StfsContainerDevice` (Xenia's SVOD reader, plain
-file reads) as `d:` and `\\Device\\Cdrom0` (where the game opens its bigfiles), loads its `default.xex` from `god_xex/`
+file reads) as `d:` and `\Device\Cdrom0` (where the game opens its bigfiles), loads its `default.xex` from `god_xex/`
 and maps `game:` to the package after the load. `sdk-patches/0010` serialises that reader's seek-and-read on the shared
 data files (the game reads on several threads).
 
