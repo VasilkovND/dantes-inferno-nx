@@ -70,6 +70,13 @@ One disc, extracted to `game/` (the runtime maps both `game:` and `d:` there), w
 | Europe `default.xex` (Media ID 27C36C6C, v0.0.0.3) | `3840af42c628d0d8d6d98965057893b8bfc7c197479f485fe6f57db8b014b0aa` |
 | TU2 `default.xexp` (`TU_12K226F_000000C000000.00000000000G3`, image v0.0.2.3) | `f49c87b8d16ef0eed693c134458ccb2bd05481ef24f38b7c6d60d532163d2290` |
 
+Games on Demand: `god/` next to the NRO may hold the package as the Xbox 360 hard drive has it (header file and
+`<name>.data/DataNNNN`). `src/dante_god.cpp` mounts it with the SDK's `StfsContainerDevice` (Xenia's SVOD reader, plain
+file reads) as `d:` and `\Device\Cdrom0` (where the game opens its bigfiles), copies its `default.xex` into `game/`
+for the loader to apply Title Update 2 beside it, and maps `game:` to the package after the load. `sdk-patches/0010`
+serialises that reader's seek-and-read on the shared data files (the game reads on several threads). Not yet run on a
+console.
+
 ## 3. Shaders
 
 - Unlike Dead Space 2, the shaders are not in the bigfiles: all 50,625 RefPack payloads of the `ols3`/`SHOC` assets

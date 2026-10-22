@@ -1,8 +1,10 @@
 // dantes-inferno-nx - Dante's Inferno (Xbox 360, Title Update 2) on the Nintendo Switch.
 //
-// Where the game is, next to the NRO (sdmc:/switch/dantes-inferno-nx/ on the console):
+// Where the game is, next to the NRO (sdmc:/switch/dantes-inferno-nx/ on the console), either way:
 //   game/   the extracted disc (default.xex, bigfile0.viv, bigfile1.viv) and Title Update 2's default.xexp
-// tools/stage_sd.py makes this layout from your ISO and title update. The runtime maps game: and d: to that folder.
+//           (tools/stage_sd.py makes it from your ISO and title update); the runtime maps game: and d: to it;
+//   god/    the Games on Demand package as the Xbox 360 hard drive has it (the header file and its .data folder), with
+//           game/ holding only default.xexp (dante_god.cpp mounts the package as d: and copies default.xex).
 //
 // The recompiled code is TU2: it only matches the image the title update patches, so default.xexp is required (the
 // runtime applies it when it loads default.xex).
@@ -23,8 +25,10 @@
 #include <memory>
 #include <string>
 #include <system_error>
+#include <vector>
 
 #include "dante_cpu.h"
+#include "dante_god.h"
 #include "dante_gpu.h"
 
 REXCVAR_DEFINE_STRING(dante_game, "", "Dante", "Carpeta del juego (disco extraido + default.xexp). Vacio: game/ junto al ejecutable.");
@@ -60,17 +64,27 @@ class DanteApp : public rex::ReXApp {
   void OnLoadXexImage(std::string& xex_image) override {
     std::error_code ec;
     const auto root = game_data_root();
-    for (const char* name : {"default.xex", "default.xexp", "bigfile0.viv", "bigfile1.viv"}) {
+    bool god = false;
+    try {
+      god = dante::god::Montar(*runtime(), rex::filesystem::GetExecutableFolder() / "god", root);
+    } catch (const std::exception& error) {
+      Fail(std::string("Dante's Inferno: ") + error.what());
+    }
+    const std::vector<const char*> needed =
+        god ? std::vector<const char*>{"default.xex", "default.xexp"}
+            : std::vector<const char*>{"default.xex", "default.xexp", "bigfile0.viv", "bigfile1.viv"};
+    for (const char* name : needed) {
       if (!std::filesystem::is_regular_file(root / name, ec)) {
         Fail(fmt::format("Dante's Inferno: {} is missing from {}. Make the folder with tools/stage_sd.py (INSTALL.md).",
                          name, root.string()));
       }
     }
-    REXLOG_INFO("dante: game at {}; loading {}", root.string(), xex_image);
+    REXLOG_INFO("dante: game at {}{}; loading {}", root.string(), god ? " and god/" : "", xex_image);
   }
 
   void OnPreLaunchModule() override {
     dante::cpu::Configurar();
+    dante::god::DespuesDeCargar(*runtime());
     // The code is TU2's. Its guest setjmp (sub_82879110) only exists in the TU2 image: without it the title update
     // was not applied, and nothing would run right.
     auto* dispatcher = runtime()->function_dispatcher();
