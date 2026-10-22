@@ -3,8 +3,8 @@
 // Where the game is, next to the NRO (sdmc:/switch/dantes-inferno-nx/ on the console), either way:
 //   game/   the extracted disc (default.xex, bigfile0.viv, bigfile1.viv) and Title Update 2's default.xexp
 //           (tools/stage_sd.py makes it from your ISO and title update); the runtime maps game: and d: to it;
-//   god/    the Games on Demand package as the Xbox 360 hard drive has it (the header file and its .data folder), with
-//           game/ holding only default.xexp (dante_god.cpp mounts the package as d: and copies default.xex).
+//   god/    the Games on Demand package as the Xbox 360 hard drive has it (the header file and its .data folder);
+//           dante_god.cpp mounts it as d: and loads its default.xex from god_xex/ (the runtime's game: then).
 //
 // The recompiled code is TU2: it only matches the image the title update patches, so default.xexp is required (the
 // runtime applies it when it loads default.xex).
@@ -56,7 +56,15 @@ class DanteApp : public rex::ReXApp {
       return;
     }
     const auto folder = rex::filesystem::GetExecutableFolder();
-    if (!folder.empty()) paths.game_data_root = folder / "game";
+    if (folder.empty()) return;
+    std::error_code ec;
+    if (std::filesystem::is_directory(folder / "god", ec)) {
+      // A Games on Demand package: its executable is loaded from god_xex/ (dante_god.cpp fills it).
+      std::filesystem::create_directories(folder / "god_xex", ec);
+      paths.game_data_root = folder / "god_xex";
+      return;
+    }
+    paths.game_data_root = folder / "game";
   }
 
   void OnPostInitLogging() override { dante::cpu::InformarSistema(); }
@@ -66,12 +74,13 @@ class DanteApp : public rex::ReXApp {
     const auto root = game_data_root();
     bool god = false;
     try {
-      god = dante::god::Montar(*runtime(), rex::filesystem::GetExecutableFolder() / "god", root);
+      const auto folder = rex::filesystem::GetExecutableFolder();
+      god = dante::god::Montar(*runtime(), folder / "god", root, folder / "game");
     } catch (const std::exception& error) {
       Fail(std::string("Dante's Inferno: ") + error.what());
     }
     const std::vector<const char*> needed =
-        god ? std::vector<const char*>{"default.xex", "default.xexp"}
+        god ? std::vector<const char*>{"default.xex"}
             : std::vector<const char*>{"default.xex", "default.xexp", "bigfile0.viv", "bigfile1.viv"};
     for (const char* name : needed) {
       if (!std::filesystem::is_regular_file(root / name, ec)) {

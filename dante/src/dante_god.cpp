@@ -5,10 +5,13 @@
 // StfsContainerDevice (from Xenia) reads it as a disc with plain file reads, no memory mapping, so the console can use
 // it: god/ next to the NRO, copied from the hard drive's Content/0000000000000000/454108CF/00007000/ as it is.
 //
-// How it is mounted: the runtime maps game: and d: to game/ (the folder with default.xex). With a package in god/:
+// How it is mounted: with a package in god/, the runtime's game: and d: start at god_xex/ next to the NRO, and:
 //   - d: and \Device\Cdrom0, which the game reads its bigfiles from, are the package;
-//   - default.xex is copied once from the package into game/ (the runtime loads it from there and applies Title Update
-//     2's default.xexp beside it: an update cannot go inside the package);
+//   - the package's default.xex is copied into god_xex/ (when it differs), for the runtime to load it from there. The
+//     package of Media ID 49028C6A carries the executable already updated to Title Update 2 (version 0.0.2.1; the disc's
+//     own is beside it as default.dll), whose loaded image is byte for byte the image this build was made from (the
+//     Europe disc 27C36C6C with its TU2): no update then, and none may lie beside it (patching an updated image fails).
+//     A package with a disc-version executable gets game/default.xexp copied beside it;
 //   - after the executable is loaded, game: is the package too, as it is the disc on the console.
 // Extracted disc files in game/ still work as before when there is no god/.
 
@@ -59,6 +62,21 @@ std::vector<uint8_t> LeerXex(rex::filesystem::Device& paquete) {
   return datos;
 }
 
+// The build field of the XEX execution info's version (major 4, minor 4, build 16, qfe 8 bits); 0 when absent.
+uint32_t VersionCompilacion(const std::vector<uint8_t>& xex) {
+  auto u32 = [&](size_t o) -> uint32_t {
+    return o + 4 <= xex.size() ? (uint32_t(xex[o]) << 24) | (uint32_t(xex[o + 1]) << 16) | (uint32_t(xex[o + 2]) << 8) | xex[o + 3]
+                               : 0;
+  };
+  const uint32_t cabeceras = u32(20);
+  for (uint32_t i = 0; i < cabeceras && i < 64; ++i) {
+    if (u32(24 + 8 * i) == 0x00040006) {
+      return (u32(u32(28 + 8 * i) + 4) >> 8) & 0xFFFF;
+    }
+  }
+  return 0;
+}
+
 bool Igual(const std::filesystem::path& ruta, const std::vector<uint8_t>& datos) {
   std::error_code ec;
   if (!std::filesystem::is_regular_file(ruta, ec) || std::filesystem::file_size(ruta, ec) != datos.size()) return false;
@@ -79,7 +97,8 @@ void Enlazar(rex::filesystem::VirtualFileSystem& vfs, const char* alias) {
 
 }  // namespace
 
-bool Montar(rex::Runtime& runtime, const std::filesystem::path& carpeta_god, const std::filesystem::path& carpeta_game) {
+bool Montar(rex::Runtime& runtime, const std::filesystem::path& carpeta_god, const std::filesystem::path& carpeta_xex,
+            const std::filesystem::path& carpeta_game) {
   std::error_code ec;
   if (!std::filesystem::is_directory(carpeta_god, ec)) return false;
   auto paquete = std::make_unique<rex::filesystem::StfsContainerDevice>(kDispositivo, carpeta_god);
@@ -97,9 +116,9 @@ bool Montar(rex::Runtime& runtime, const std::filesystem::path& carpeta_god, con
               tipo, titulo, medio);
 
   const std::vector<uint8_t> xex = LeerXex(*paquete);
-  const auto ruta_xex = carpeta_game / "default.xex";
+  const auto ruta_xex = carpeta_xex / "default.xex";
   if (!Igual(ruta_xex, xex)) {
-    std::filesystem::create_directories(carpeta_game, ec);
+    std::filesystem::create_directories(carpeta_xex, ec);
     FILE* f = std::fopen(ruta_xex.string().c_str(), "wb");
     if (!f || std::fwrite(xex.data(), 1, xex.size(), f) != xex.size()) {
       if (f) std::fclose(f);
@@ -107,6 +126,17 @@ bool Montar(rex::Runtime& runtime, const std::filesystem::path& carpeta_god, con
     }
     std::fclose(f);
     REXLOG_INFO("dante: default.xex copiado del paquete a {} ({} bytes)", ruta_xex.string(), xex.size());
+  }
+  // Its version (XEX execution info): build 2 and up is Title Update 2 already.
+  const auto xexp = carpeta_xex / "default.xexp";
+  if (VersionCompilacion(xex) >= 2) {
+    std::filesystem::remove(xexp, ec);
+    REXLOG_INFO("dante: el ejecutable del paquete ya trae el Title Update 2 (Media ID {:08X})", medio);
+  } else if (std::filesystem::is_regular_file(carpeta_game / "default.xexp", ec)) {
+    std::filesystem::copy_file(carpeta_game / "default.xexp", xexp, std::filesystem::copy_options::overwrite_existing, ec);
+    if (ec) throw std::runtime_error("cannot copy game/default.xexp beside the package's default.xex");
+  } else {
+    throw std::runtime_error("the package's default.xex is the disc version: put Title Update 2's default.xexp in game/");
   }
 
   rex::filesystem::VirtualFileSystem& vfs = *runtime.file_system();

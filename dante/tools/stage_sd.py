@@ -9,7 +9,9 @@ Writes, beside where the NRO goes (src/dante_app.h reads this layout):
 
 The same game/ folder is what tools/build_mac.sh takes to generate the code. Every input is checked against the
 hashes the port was made and tested with: the code is TU2, so any other executable or patch would not match it.
-Supported: the Europe disc (Media ID 27C36C6C) with its Title Update 2 package (TU_12K226F_000000C000000.00000000000G3).
+Supported: the Europe disc (Media ID 27C36C6C) with its Title Update 2 package (TU_12K226F_000000C000000.00000000000G3),
+and the disc of Media ID 49028C6A with its own (TU_12K226F_0000004000000.00000000000G1). A Games on Demand install
+needs no staging: copy it to god/ (dante/src/dante_god.cpp).
 Only the standard library (the title update package is read by the small STFS reader below).
 """
 import argparse
@@ -23,6 +25,10 @@ TITLE_ID = 0x454108CF
 EDITIONS = {
     "f49c87b8d16ef0eed693c134458ccb2bd05481ef24f38b7c6d60d532163d2290":
         ("Europe", "27C36C6C", "3840af42c628d0d8d6d98965057893b8bfc7c197479f485fe6f57db8b014b0aa"),
+    # The edition whose Games on Demand package carries this executable already updated (default.xex 0.0.2.1, the
+    # disc's beside it as default.dll). After TU2 its image is byte for byte the Europe one's: the same build runs it.
+    "0842733820a27e0c902e6a652b3cd71d2c4a05f36db5121c1d342416a6b7ab09":
+        ("Media ID 49028C6A", "49028C6A", "abfef19fa03a247ab17d5c011e34ca70a0338f13c15b7fd8932c7ff7d9e2c2e9"),
 }
 SECTOR = 2048
 MAGIC = b"MICROSOFT*XBOX*MEDIA"
@@ -170,7 +176,8 @@ def read_xexp(path: Path) -> bytes:
             data = b"".join(pkg.block(e["start"] + k) for k in range(e["blocks"]))[:e["size"]]
             if sha256(data) not in EDITIONS:
                 sys.exit("default.xexp is not a Title Update 2 this port supports (hash mismatch): use the Title "
-                         "Update 2 package for your disc's Media ID (Europe 27C36C6C: TU_12K226F_000000C000000.00000000000G3)")
+                         "Update 2 package for your disc's Media ID (Europe 27C36C6C: TU_12K226F_000000C000000.00000000000G3; "
+                         "49028C6A: TU_12K226F_0000004000000.00000000000G1)")
             return data
         sys.exit(f"{path} has no default.xexp")
     finally:

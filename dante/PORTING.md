@@ -72,10 +72,21 @@ One disc, extracted to `game/` (the runtime maps both `game:` and `d:` there), w
 
 Games on Demand: `god/` next to the NRO may hold the package as the Xbox 360 hard drive has it (header file and
 `<name>.data/DataNNNN`). `src/dante_god.cpp` mounts it with the SDK's `StfsContainerDevice` (Xenia's SVOD reader, plain
-file reads) as `d:` and `\Device\Cdrom0` (where the game opens its bigfiles), copies its `default.xex` into `game/`
-for the loader to apply Title Update 2 beside it, and maps `game:` to the package after the load. `sdk-patches/0010`
-serialises that reader's seek-and-read on the shared data files (the game reads on several threads). Not yet run on a
-console.
+file reads) as `d:` and `\\Device\\Cdrom0` (where the game opens its bigfiles), loads its `default.xex` from `god_xex/`
+and maps `game:` to the package after the load. `sdk-patches/0010` serialises that reader's seek-and-read on the shared
+data files (the game reads on several threads).
+
+The user's package is Media ID 49028C6A. Its `default.xex` is version 0.0.2.1: Title Update 2 already applied (the
+disc's executable, 0.0.0.1, is beside it as `default.dll`). Loaded, it is byte for byte the image this build was
+made from (Europe disc + TU2, 0.0.2.3), as is that disc executable with its own TU2
+(`TU_12K226F_0000004000000.00000000000G1`): one build runs all three. So no update is put beside an already updated
+executable (patching it would fail), and `stage_sd.py` accepts both discs.
+
+| File | SHA-256 |
+| --- | --- |
+| 49028C6A disc `default.xex` (`default.dll` in the GOD package, v0.0.0.1) | `abfef19fa03a247ab17d5c011e34ca70a0338f13c15b7fd8932c7ff7d9e2c2e9` |
+| 49028C6A TU2 `default.xexp` | `0842733820a27e0c902e6a652b3cd71d2c4a05f36db5121c1d342416a6b7ab09` |
+| 49028C6A GOD `default.xex` (v0.0.2.1) | `e905710ce74cf9390e0e23463db16d52968f3c5bf4670f60b966a8d1a6ac4469` |
 
 ## 3. Shaders
 
