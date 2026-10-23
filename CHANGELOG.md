@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.3 (TU2) — 2026-10-23
+
+- **Resolved textures of five sizes at one address** (`sdk-patches/0011`): the renderer kept four other sizes per
+  address and dropped by key order, so the 1280x720 and 1280x360 ones the game resolves every frame were destroyed and
+  created again (empty) twice a frame from the first circles on: wasted clears and copies, and effects that sample the
+  older one read an empty image. Now six per address, the least recently used dropped first.
+- **FPS Locker** (`sdk-patches/0012`): the target its overlay sets (handheld and docked, and the one it saved for the
+  title) is honoured as NX-FPS does for Vulkan games. Without a target the game is not limited.
+- Only the NRO changes: the shader library and the DKSH cache are the same as 1.0.0's.
+- Heavy scenes that drop to 30 fps overclocked are bound by the GPU (15-27 ms a frame at 614 MHz), not the CPU: the
+  game's Presentation thread shows ~95 % at any clock because it waits busily. GPU 768 MHz helps; CPU above ~1785 MHz
+  does not.
+
 ## 1.0.2 (TU2) — 2026-10-22
 
 - **Building from a Games on Demand install.** `dante/tools/build_mac.sh` (and `codegen.sh`) take the package folder

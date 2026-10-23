@@ -1,0 +1,113 @@
+--- a/src/ui/switch_saltynx.cpp
++++ b/src/ui/switch_saltynx.cpp
+@@ -206,6 +206,7 @@
+ void SembrarBloque(BloqueFps* bloque) {
+   bloque->plugin_activo = true;  // the overlay sets it to false to check that we are still alive
+   bloque->api = kApiVulkan;
++  bloque->buffers = 3;  // the presenter's swapchain (FPS Locker shows it and keeps ZeroSync off above 2)
+   bloque->fps = g_ultimo_fps;
+   bloque->fps_media = g_ultima_media;
+   bloque->numero_fotograma = g_ultimos_fotogramas;
+@@ -254,10 +255,43 @@
+  * of 4 bytes on memory that is already there) and uses no port session, so it can be repeated every
+  * second while the block is missing. Returns true if there is an FPS block.
+  */
++/*
++ * FPS Locker's saved target for this title (sdmc:/SaltySD/plugins/FPSLocker/<TID>.dat, written by its overlay):
++ * byte 0 the handheld target, byte 4 the docked one when the file has it. NX-FPS reads it into the block when the
++ * game starts; it cannot hook us, so it is read here, once, when the block is found.
++ */
++void CargarBloqueoGuardado(BloqueFps* bloque) {
++  static bool cargado = false;
++  if (cargado) {
++    return;
++  }
++  cargado = true;
++  u64 titulo = 0;
++  if (R_FAILED(svcGetInfo(&titulo, InfoType_ProgramId, CUR_PROCESS_HANDLE, 0))) {
++    return;
++  }
++  char ruta[96];
++  std::snprintf(ruta, sizeof(ruta), "sdmc:/SaltySD/plugins/FPSLocker/%016llX.dat", (unsigned long long)titulo);
++  FILE* f = std::fopen(ruta, "rb");
++  if (!f) {
++    return;
++  }
++  uint8_t datos[5] = {};
++  const size_t leidos = std::fread(datos, 1, sizeof(datos), f);
++  std::fclose(f);
++  if (leidos >= 1) {
++    bloque->fps_bloqueados = datos[0];
++    bloque->fps_bloqueados_base = leidos >= 5 ? datos[4] : datos[0];
++    std::fprintf(stderr, "[saltynx] FPS Locker: objetivo guardado %u (portatil) / %u (base) en %s\n",
++                 unsigned(bloque->fps_bloqueados), unsigned(bloque->fps_bloqueados_base), ruta);
++  }
++}
++
+ bool Enganchar() {
+   auto* bloque = static_cast<BloqueFps*>(BuscarMarca(kMagicFps));
+   if (bloque) {
+     g_fps.store(bloque, std::memory_order_release);
++    CargarBloqueoGuardado(bloque);
+     SembrarBloque(bloque);
+     AvisarPublicado(bloque);
+   }
+@@ -741,7 +775,50 @@
+  * incompatible". Also, it computes the FPS average from FPSticks[10] (frequency / average of the
+  * ticks), so with the array at zero it showed "inf". Here it is filled with the real time between
+  * presents.
++ */
++/*
++ * FPS Locker: its overlay writes the target into the block (FPSlocked handheld, FPSlockedDocked docked; 0 = off),
++ * and NX-FPS, which cannot hook us, would hold each present until 1/target s after the previous one. The same is done
++ * here, as NX-FPS does it for Vulkan (saltysd_core NX-FPS-Common.hpp, PreFrame/PostFrame): only below the screen's
++ * refresh rate, 6000 ticks early, and a margin that grows while the average stays above the target. With no target
++ * nothing waits: the game runs as fast as it can.
+  */
++static void EsperarBloqueo(BloqueFps* bloque) {
++  static uint64_t fin_previo = 0;  // ring thread only, like g_tick_previo
++  static uint64_t media = 0;
++  static uint32_t margen = 0;
++  const bool en_base = ModoBase(appletGetOperationMode() == AppletOperationMode_Console);
++  const uint32_t objetivo = en_base ? bloque->fps_bloqueados_base : bloque->fps_bloqueados;
++  // SaltyNX keeps the display's refresh rate in the page's second byte (FPS Locker reads it there too).
++  const uint8_t refresco_compartido = g_base ? g_base[1] : 0;
++  const uint32_t refresco = refresco_compartido >= 30 && refresco_compartido <= 120 ? refresco_compartido : 60;
++  bloque->refresco_actual = uint8_t(refresco);
++  const uint64_t frecuencia = armGetSystemTickFreq();
++  bool esperado = false;
++  if (objetivo && objetivo < refresco && fin_previo) {
++    const int64_t plazo = int64_t(frecuencia / objetivo) - 6000 + int64_t(margen) * 32;
++    while (int64_t(armGetSystemTick() - fin_previo) < plazo) {
++      esperado = true;
++      svcSleepThread(10000);
++    }
++  } else {
++    margen = 0;
++  }
++  const uint64_t fin = armGetSystemTick();
++  if (fin_previo) {
++    media = (9 * media + (fin - fin_previo)) / 10;
++    if (esperado && media) {
++      const double fps = double(frecuencia) / double(media);
++      if (fps > double(objetivo)) {
++        if (margen < 200) ++margen;
++      } else if (uint32_t(fps + 0.5) == objetivo && margen > 0) {
++        --margen;
++      }
++    }
++  }
++  fin_previo = fin;
++}
++
+ void Latir(uint32_t ancho, uint32_t alto) {
+   BloqueFps* bloque = g_fps.load(std::memory_order_acquire);
+   // If the magic is gone, the pointer is not valid. It is dropped and the profiler thread's one-second
+@@ -764,6 +841,7 @@
+     g_tick_previo = 0;
+   }
+ 
++  EsperarBloqueo(bloque);
+   const uint64_t ahora = armGetSystemTick();
+   if (g_tick_previo != 0) {
+     const uint64_t salto = ahora - g_tick_previo;
