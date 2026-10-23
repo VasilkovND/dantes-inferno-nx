@@ -206,8 +206,9 @@ class Func:
         labels = {}
         depth = 1
         gotos = []
-        # For each open brace: whether what is inside may not run (opened by an if/else/switch line).
+        # For each open brace: whether what is inside may not run (opened by an if/else/switch line), and its line.
         cond_stack = []
+        skips = []  # (line opening a conditional block, line closing it): the path that does not run the block
         for i, line in enumerate(body):
             lm = LABEL.match(line)
             if lm:
@@ -229,7 +230,7 @@ class Func:
                         use |= b
                 # x = x + 1: the read comes first. A write that may not happen (in an if, in a conditional block)
                 # replaces nothing for certain.
-                if any(cond_stack) or re.search(r"\b(?:if|else|switch|case|default)\b|\?", code):
+                if any(c for c, _ in cond_stack) or re.search(r"\b(?:if|else|switch|case|default|for|while|do)\b|\?", code):
                     kill = 0
                 self.use[i], self.kill[i], self.wr[i] = use, kill, wr
                 stripped = OCC.sub("", code)
@@ -253,12 +254,14 @@ class Func:
                         (s.startswith(INDIRECT) and find_indirect(s) == [(0, len(s))]))
                 self.returns[i] = "return;" in code
                 gotos.append((i, GOTO.findall(code)))
-            conditional = re.search(r"\b(?:if|else|switch|case|default)\b", code) is not None
+            conditional = re.search(r"\b(?:if|else|switch|case|default|for|while|do)\b", code) is not None
             for ch in code:
                 if ch == "{":
-                    cond_stack.append(conditional)
+                    cond_stack.append((conditional, i))
                 elif ch == "}" and cond_stack:
-                    cond_stack.pop()
+                    c, opened = cond_stack.pop()
+                    if c and opened != i:
+                        skips.append((opened, i))
             depth += code.count("{") - code.count("}")
         if depth != 1:
             raise Skip("unbalanced braces")
@@ -280,13 +283,21 @@ class Func:
                         break
                 else:
                     self.tail[i] = True
-        # Control flow: lines fall through unless they are an unconditional goto/return at the top level.
+        # Control flow: lines fall through unless they are an unconditional goto/return at the top level. A conditional
+        # block may also be skipped: an edge from its opening line to its closing one. (Falling through the block's
+        # lines alone is not enough: a call in it clears the dirty registers, `if (c) { X(ctx, base); return; }` made
+        # the code after the block look clean on the path where c is false, and r1 went unwritten before the next
+        # call there: the callee's frame overwrote this function's saved registers.)
         gmap = dict(gotos)
+        skipmap = {}
+        for a, b in skips:
+            skipmap.setdefault(a, []).append(b)
         for i in range(n):
             s = code_part(body[i]).strip()
             term = self.depth[i] == 1 and (s == "return;" or (s.startswith("goto ") and s.endswith(";") and
                                                                s.count(";") == 1))
             succ = [] if term else [i + 1]
+            succ.extend(b for b in skipmap.get(i, ()) if b not in succ)
             for g in gmap.get(i, ()):
                 if g not in labels:
                     raise Skip("goto to unknown label " + g)
@@ -867,6 +878,21 @@ def rewrite(f, ref, mod, liveout, hooked, defined, sites=None):
                 seen[s] = True
                 work.append(s)
 
+    def ret_poison(here, calls):
+        """PLR_CHECK=1: at a return, the GPRs/FPRs this function changed (dirty) that its callers may not read back
+        (MOD | CH, not in LIVEOUT) get a poison naming the return; a caller reading one faults at 0x5Exxxxxx (a
+        LIVEOUT mistake: the caller would have read a stale value from ctx)."""
+        if not CHECK or calls:
+            return ""
+        pm = here & (mod[f.name] | ch) & ~liveout[f.name]
+        regs = [x for x in names if x[0] in "rf" and x[1:].isdigit() and pm >> BIT[x] & 1]
+        if not regs:
+            return ""
+        sid = sites["base"] + len(sites["list"])
+        sites["list"].append(f"{sid:06X} {f.name} line {i if i < n else n} returns")
+        pv = 0x5EAD5EAD00000000 | 0x5E000000 | sid
+        return "".join(f"ctx.{x}.u64 = 0x{pv:X}ull; " for x in regs)
+
     out = body[:f.start]
     out.extend(f"\t{ctype(r)} L_{r} = ctx.{r};" for r in names)
     sub = lambda m: "L_" + m.group(1)
@@ -936,11 +962,14 @@ def rewrite(f, ref, mod, liveout, hooked, defined, sites=None):
             new = TRAP.sub(lambda m: wrap("t", None, m.group(0)), new)
         if f.returns[i]:
             fm = here & at_return
-            if fm:
-                new = new.replace("return;", "{ " + flush(fm, names) + "return; }")
+            pz = ret_poison(here, f.calls[i]) if CHECK else ""
+            if fm or pz:
+                new = new.replace("return;", "{ " + flush(fm, names) + pz + "return; }")
         out.append(new + comment)
-    if seen[n] and din[n] & at_return:
-        out.append("\t" + flush(din[n] & at_return, names).rstrip())
+    if seen[n] and (din[n] & at_return or CHECK):
+        tail = flush(din[n] & at_return, names) + ret_poison(din[n], None)
+        if tail:
+            out.append("\t" + tail.rstrip())
     return out
 
 

@@ -37,6 +37,15 @@ What is different from gears2-nx:
   local of the function after it. The guest setjmp itself (sub_82879110) reads the non-volatiles it stores from ctx,
   so its REF makes callers write them back first. Without this every such function was "another use of ctx", and one
   such function turns LIVEOUT off for the whole program.
+- **Conditional blocks can be skipped** (a fix to the pass; gears2-nx's code had almost no such blocks). Hell's Gate
+  writes `if (c) { unresolved_target_X(ctx, base); return; }` over several lines (134 times). The pass's control flow
+  only fell through a block's lines, and a call inside one clears the dirty registers, so the code after it looked
+  written back on the path where c is false. The first check build crashed in the menu: `r1` was not written back
+  before the next call, the callee's frame overwrote `sub_82482538`'s saved registers and its caller got r31 = 1
+  (RtlEnterCriticalSection on 0x59). Now every line opening an if / else / switch / for / while / do block also has
+  an edge to the line closing it.
+- The check build also poisons, at each return, the registers the function changed that the analysis says no caller
+  reads back (MOD | CH outside LIVEOUT), so a LIVEOUT mistake faults at `0x5Exxxxxx` instead of reading a stale value.
 - The check build reports through `dante_regcheck_fail` (`src/dante_cpu.cpp`); its sites are listed in
   `dante/out/codegen/patch_local_regs.check.map`.
 - `tools/localize_regs.py` (an earlier, unused copy of a few VP6 functions with their registers in locals, writing
@@ -51,6 +60,23 @@ helper calls are; `dantes_inferno_recomp.64.cpp` 275 -> 219 KB of code.
 are poisoned with `0x5EAD5EAD_5E<site>`, and the live ones it should keep are compared after it. Play 5-10 minutes
 (menus, a video, a fight, a save and a load: the save goes through the guest setjmp), then look for `[regcheck]` in the
 game log and for faults at `0x5Exxxxxx` in `rex_crash.log`. Build it after any change to the passes, before measuring.
+
+## Result (console, 2026-10-23)
+
+Check build: menu, a video, loading a save and gameplay without a `[regcheck]` line or a fault (after the fix above).
+
+Fast build at stock clocks (CPU 1020 MHz, GPU 307 MHz), the scene after loading the "Chasing Beatrice" save, 10 s
+windows with 500+ draws a frame:
+
+| Build | fps | GPU ms a frame | frame ms | Presentation |
+| --- | --- | --- | --- | --- |
+| 1.0.3 (run 7; run 5 two days earlier: 37-39 fps) | 38.2-38.3 | 21.1-21.8 | 26.1 | 81-82 % |
+| this (run 11) | 44.3-45.8 | 20.7-21.6 | 21.8-22.6 | 82-84 % |
+
+The frame now takes about 1 ms more than the GPU: that scene is GPU-bound at stock clocks, and more frame rate there
+has to come from the renderer (or the GPU clock). The CPU time of the Presentation thread per frame went from ~21 to
+~18 ms, the Main XThread from 52-55 % to ~44 % of a core while running faster. Code: NRO 44.2 -> 36.5 MB. Only a short
+session was measured (three minutes); longer play, fights and the overclocked profile are still to be compared.
 
 ## Measuring
 
