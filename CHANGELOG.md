@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.1.0 (TU2) — 2026-10-23
+
+- **The game's CPU work is faster** (`dante/tools/patch_stack_access.py`, `patch_inline_calls.py`,
+  `patch_local_regs.py`, from gears2-nx 1.0.0; [dante/CPU_OPTIMIZATION.md](dante/CPU_OPTIMIZATION.md)). The recompiled
+  code kept every PowerPC register in memory and moved it in and out around every guest load and store; now each
+  function keeps them in host registers and writes back only what other code can read, as worked out for the whole
+  program. At stock clocks, the heavy scene after loading a save went from ~38 fps to 44-46 fps, where it is now bound
+  by the GPU (the frame takes ~1 ms more than the GPU's 21 ms). The NRO is 36.5 MB instead of 44.2.
+- Porting the pass found an unsound case in it (calls inside `if { ...; return; }` blocks, which Hell's Gate writes
+  134 times): a check build (`PLR_CHECK=1`) crashed in the menu, the fix is in and the check build plays clean.
+- **Debug modes removed**: the debug shortcuts (ZL + ZR + Down / Left / Right / R: captures, frame dumps,
+  draw-skipping modes, stack sampling) are off whatever `dante.toml` says; telemetry (`telemetria.flag`: automatic
+  captures, frame dumps, frame and draw traces, CPU stack sampling, GPU profile), `sin_resplandor.flag`,
+  `dante_shader_dump` and `dante_vp6_comprobar` are gone. The FPS counter stays (**ZL + ZR + Up**). Shader containers
+  the library lacks are still written to `shaders_dump/`.
+- Only the NRO changes: the shader library and the DKSH cache are the same as 1.0.0's.
+
 ## 1.0.3 (TU2) — 2026-10-23
 
 - **Resolved textures of five sizes at one address** (`sdk-patches/0011`): the renderer kept four other sizes per

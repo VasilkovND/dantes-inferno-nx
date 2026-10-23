@@ -16,11 +16,9 @@
 // border), U and V at frame + pbi[456 / 460] + 24 * uv_stride + 24 with uv_stride pbi[392]; width and height pbi[380]
 // and pbi[384].
 //
-// The buffer holds frames upside down against FFmpeg's picture (found on the console). With dante_vp6_comprobar the
-// first frames of the first video are decoded by both instead, and the game's output compared with FFmpeg's, as it is
-// and upside down, until a frame tells the two apart (a uniform one, like the logos' black first frames, does not);
-// the answer is used for every later video. A video whose pictures keep disagreeing stays with the game's decoder.
-// dante_vp6_ffmpeg=false turns it all off.
+// The buffer holds frames upside down against FFmpeg's picture (found on the console). A video whose frames FFmpeg
+// cannot decode, or whose size does not fit the game's buffer, is compared with the game's decoder (as it is and upside
+// down) and stays with the game's decoder when they keep disagreeing. dante_vp6_ffmpeg=false turns it all off.
 
 #include "dantes_inferno_pch.h"
 
@@ -42,9 +40,6 @@ extern "C" {
 #include <unordered_map>
 #include <vector>
 
-REXCVAR_DEFINE_BOOL(dante_vp6_comprobar, false, "Dante",
-                    "Comparar los primeros cuadros de los videos con el descodificador del juego para saber la "
-                    "orientacion del buffer, en vez de la conocida (volteada)");
 REXCVAR_DEFINE_BOOL(dante_vp6_ffmpeg, true, "Dante",
                     "Los videos (VP6) descodificados con FFmpeg en vez del descodificador del juego, mucho mas lento "
                     "recompilado. false = el del juego");
@@ -106,9 +101,8 @@ struct Decodificador {
 std::mutex g_candado;
 std::unordered_map<uint32_t, std::unique_ptr<Decodificador>> g_decodificadores;  // by pbi
 // The orientation: upside down for this game (console session 5: FFmpeg's picture as it is came out upside down on
-// screen). dante_vp6_comprobar learns it again from the first video.
+// screen).
 Modo g_orientacion = Modo::kFFmpegVolteado;
-bool g_orientacion_lista = false;
 
 // The frame's bytes: the EA chunk ("MV0K" key frame, "MV0F" other, little-endian size with its 8-byte header) when the
 // data sits right after its header; otherwise as far as its memory region goes, at most 1 MB (VP6 reads only what the
@@ -214,10 +208,6 @@ REX_EXTERN(VP6_DecodeFrameMbs) {
   const double ms = AhoraMs() - t0;
   const Planos pl = PlanosDe(base, pbi);
 
-  if (!g_orientacion_lista) {
-    g_orientacion_lista = true;
-    if (REXCVAR_GET(dante_vp6_comprobar)) g_orientacion = Modo::kSinCalibrar;
-  }
   if (d->modo == Modo::kSinCalibrar && g_orientacion != Modo::kSinCalibrar && ok && Encaja(pl, d->f)) {
     d->modo = g_orientacion;
     REXLOG_INFO("[video] VP6 {:08X} {}x{}: FFmpeg{}", pbi, pl.ancho, pl.alto,

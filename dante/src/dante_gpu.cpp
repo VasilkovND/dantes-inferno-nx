@@ -78,9 +78,6 @@
 #define XXH_INLINE_ALL
 #include <xxhash.h>
 
-REXCVAR_DECLARE(bool, switch_captura_pedida);  // ZL + ZR + Down (sdk/src/input/switch/switch_input_driver.cpp)
-REXCVAR_DECLARE(bool, switch_volcado_pedido);  // ZL + ZR + Left: every resolved texture of the next frame
-REXCVAR_DECLARE(bool, switch_omitir_pedido);   // ZL + ZR + Right: next draw-skipping mode (SkipMode)
 // The SDK renderer's shadow-pass shortcuts (sdk/src/x360/deko/destinos.cpp; the SDK keeps their nfsmw_ names): both
 // drop colorless draws that alpha-test or discard, which here are ordinary depth-only draws. Off for Dead Space 2.
 REXCVAR_DECLARE(bool, nfsmw_sombras_sin_vegetacion);
@@ -91,38 +88,7 @@ REXCVAR_DECLARE(int32_t, nfsmw_dk_sombras_sesgo_pitch);
 // were tried against the streaks (which were the vertex index and the computed-index fetches, not stale vertices):
 // they hashed 14-20 MB of vertices a frame and the ring thread went from 9 % to 40 % of a core.
 REXCVAR_DECLARE(bool, nfsmw_dk_geometria_muestreo);
-REXCVAR_DECLARE(int32_t, nfsmw_dk_perfil_gpu_s);  // the renderer's periodic GPU profile (telemetry only)
-// Safe mode (ZL + ZR + Right, mode 1): every shortcut the renderer took for NFS Most Wanted off at once, to tell whether
-// one of them breaks Dead Space 2 (each changes what is drawn when its guess about the game is wrong). The SDK reads
-// them on every use, so they switch while the game runs.
-REXCVAR_DECLARE(bool, nfsmw_nativo_saltar_invisibles);
-REXCVAR_DECLARE(bool, nfsmw_nativo_sin_ps_sin_color);
-REXCVAR_DECLARE(bool, nfsmw_nativo_sin_desenfoque);
-REXCVAR_DECLARE(bool, nfsmw_nativo_pcf_barato);
-REXCVAR_DECLARE(bool, nfsmw_nativo_sombra_minimo);
-REXCVAR_DECLARE(bool, nfsmw_nativo_z_temprana);
-REXCVAR_DECLARE(bool, nfsmw_nativo_cielo_aplazado);
-REXCVAR_DECLARE(bool, nfsmw_dk_constantes_por_diferencias);
-REXCVAR_DECLARE(bool, nfsmw_nativo_saltar_borrados_repetidos);
-REXCVAR_DECLARE(bool, nfsmw_nativo_resolver_sin_copia);
-REXCVAR_DECLARE(bool, nfsmw_nativo_intercambiar_sin_borrado);
-REXCVAR_DECLARE(bool, nfsmw_nativo_frontal_perezoso);
-REXCVAR_DECLARE(bool, nfsmw_dk_borrar_area_util);
-REXCVAR_DECLARE(bool, nfsmw_dk_borrado_color_aplazado);
-REXCVAR_DECLARE(bool, nfsmw_dk_borrado_z_aplazado);
-
-// Automatic data collection while the renderer is being brought up: nothing to press on the console.
-REXCVAR_DEFINE_INT32(dante_auto_captura_s, 5, "Dante",
-                     "Cada cuantos segundos se guarda una captura reducida (640x360) en capturas/auto_NNNN.bmp; 0 = nunca");
-REXCVAR_DEFINE_INT32(dante_auto_volcado_primero_s, 120, "Dante",
-                     "Segundo de juego del primer volcado automatico de las texturas resueltas de un fotograma");
-REXCVAR_DEFINE_INT32(dante_auto_volcado_cada_s, 300, "Dante", "Segundos entre volcados automaticos; 0 = solo el primero");
-REXCVAR_DEFINE_INT32(dante_auto_volcados_max, 4, "Dante", "Volcados automaticos como mucho (0 = ninguno)");
-REXCVAR_DEFINE_INT32(dante_traza_cada_s, 60, "Dante", "Segundos entre trazas de la estructura de un fotograma pesado");
-REXCVAR_DEFINE_INT32(dante_trazas_max, 20, "Dante", "Trazas de fotograma como mucho");
-REXCVAR_DEFINE_BOOL(dante_perfil_pilas, true, "Dante",
-                    "Crea logs/rex/perfil_pilas.flag al arrancar: el perfil de CPU muestrea las pilas de cada hilo "
-                    "(rex_perfil.log), algo mas lento");
+REXCVAR_DECLARE(int32_t, nfsmw_dk_perfil_gpu_s);  // the renderer's periodic GPU profile: off (each was a hitch)
 #endif
 
 namespace dante::gpu {
@@ -249,28 +215,12 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
     REXCVAR_SET(nfsmw_sombras_sin_vegetacion, false);
     REXCVAR_SET(nfsmw_nativo_ps_solo_alfa, false);
     REXCVAR_SET(nfsmw_dk_sombras_sesgo_pitch, 960);
-    // Telemetry (automatic captures, frame dumps, per-draw traces of light frames, CPU stack sampling) only with
-    // telemetria.flag next to the NRO: it costs frames (the stack sampler stops every thread each millisecond).
     {
+      // No CPU stack sampling (a flag an earlier debug build may have left: it stops every thread each millisecond),
+      // and no GPU profile of a frame every 20 s (a barrier and two timestamps around each draw): both were hitches.
       std::error_code ec;
-      telemetry_ = std::filesystem::exists(rex::filesystem::GetExecutableFolder() / "telemetria.flag", ec);
-      const auto folder = rex::filesystem::GetExecutableFolder() / "logs" / "rex";
-      const auto stack_flag = folder / "perfil_pilas.flag";
-      if (telemetry_ && REXCVAR_GET(dante_perfil_pilas)) {
-        std::filesystem::create_directories(folder, ec);
-        if (FILE* flag = std::fopen(stack_flag.string().c_str(), "a")) std::fclose(flag);
-      } else {
-        std::filesystem::remove(stack_flag, ec);  // left by an earlier telemetry run
-      }
-      REXLOG_INFO("[gpu] telemetry {}", telemetry_ ? "on (telemetria.flag)" : "off");
-      // The renderer's GPU profile of a frame every 20 s (a barrier and two timestamps around each of ~1300 draws, the
-      // first draw of each pass drawn twice) and the frame structure traces (hundreds of log lines to the SD card once
-      // a minute) are telemetry too: each was a visible hitch.
-      if (!telemetry_) {
-        REXCVAR_SET(nfsmw_dk_perfil_gpu_s, 0);
-      }
-      hide_glow_ = std::filesystem::exists(rex::filesystem::GetExecutableFolder() / "sin_resplandor.flag", ec);
-      if (hide_glow_) REXLOG_INFO("[gpu] sin_resplandor.flag: lamp glows and coronas are not drawn");
+      std::filesystem::remove(rex::filesystem::GetExecutableFolder() / "logs" / "rex" / "perfil_pilas.flag", ec);
+      REXCVAR_SET(nfsmw_dk_perfil_gpu_s, 0);
     }
     // Before the game creates its shaders (the create hooks look the containers up in it).
     dante::shaders::Global().Cargar(rex::filesystem::GetExecutableFolder() / "dante_shaders.dslib");
@@ -695,9 +645,6 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
   void PacketType3(Reader& data, uint32_t packet, uint32_t count, int depth) {
     const uint32_t opcode = (packet >> 8) & 0x7F;
     if ((packet & 0x1) && (!(bin_select_ & bin_mask_) || opcode == xenos::PM4_XE_SWAP)) {
-#if DANTE_DEKO3D
-      ++frame_.predicated_skipped;
-#endif
       return;  // predicate fails; predicated Swaps are always dropped
     }
     switch (opcode) {
@@ -713,9 +660,6 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
         break;
       }
       case xenos::PM4_XE_SWAP:
-#if DANTE_DEKO3D
-        FrameTraceSwap();
-#endif
         // VdSwap writes "SWAP", the frontbuffer's physical address and its size. The renderer presents whatever is
         // resolved (clears and, once the ring decoder feeds draws, the frame). Handheld 1280x720.
         ++swaps_;
@@ -723,39 +667,6 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
         if (EnsureRenderer()) {
           // VdSwap describes the frontbuffer in fetch constant 0; an empty TexturaSwap finds nothing (black).
           destinos_->Presentar(presenter_.get(), rex::x360::LeerTexturaSwap(registers_.data()), 1280, 720);
-          if (REXCVAR_GET(switch_omitir_pedido)) {
-            REXCVAR_SET(switch_omitir_pedido, false);
-            skip_mode_ = ((skip_mode_ ? skip_mode_ : skip_resume_) + 1) % kSkipModes;
-            skip_resume_ = 0;
-            SetNfsShortcuts(skip_mode_ != 1);
-            REXLOG_INFO("[gpu] skip mode {}: {} (the next capture shows it)", skip_mode_, kSkipModeNames[skip_mode_]);
-            capture_after_skip_ = 3;  // a few frames later, when the change is on screen
-          }
-          if (capture_after_skip_ && --capture_after_skip_ == 0) {
-            SaveCapture();
-            REXLOG_INFO("[gpu] capture above: skip mode {} ({})", skip_mode_, kSkipModeNames[skip_mode_]);
-            // The skipping modes hide part of the game (the ammo hologram is additive): back to normal rendering once
-            // their capture is taken; the next press goes on to the next mode. Safe mode stays until the next press.
-            if (skip_mode_ > 1) {
-              skip_resume_ = skip_mode_;
-              skip_mode_ = 0;
-              REXLOG_INFO("[gpu] skip mode {} done, normal rendering again", skip_resume_);
-            }
-          }
-          if (REXCVAR_GET(switch_volcado_pedido)) {
-            REXCVAR_SET(switch_volcado_pedido, false);
-            destinos_->PedirVolcado();
-            // And every draw of that frame in the log, whatever its size (FrameTraceSwap ends it at the next Swap).
-            draw_tracing_ = true;
-            draw_trace_n_ = 0;
-            draw_trace_cap_ = 3000;
-            REXLOG_INFO("[draws] full trace of the next frame (ZL + ZR + Left)");
-          }
-          AutomaticCollection();
-          if (REXCVAR_GET(switch_captura_pedida)) {
-            REXCVAR_SET(switch_captura_pedida, false);
-            SaveCapture();
-          }
         }
         break;
       case xenos::PM4_INDIRECT_BUFFER:
@@ -991,21 +902,6 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
         if (!EnsureRenderer()) break;
         // A copy-mode draw is a resolve and/or a clear.
         if (rex::x360::EsCopia(registers_.data())) {
-          ResolveCatalog();
-          FrameTraceCopy();
-          if (draw_tracing_ && draw_trace_n_ < draw_trace_cap_) {
-            namespace g = rex::graphics;
-            const uint32_t control = Register(g::XE_GPU_REG_RB_COPY_CONTROL);
-            REXLOG_INFO("[draws]   copy: source {} (c0 {:03X} z {:03X}) pitch {} clear color {} depth {} command {} -> "
-                        "{:08X} pitch {} height {} format {}",
-                        control & 0x7, Register(g::XE_GPU_REG_RB_COLOR_INFO) & 0xFFF,
-                        Register(g::XE_GPU_REG_RB_DEPTH_INFO) & 0xFFF,
-                        Register(g::XE_GPU_REG_RB_SURFACE_INFO) & 0x3FFF, (control >> 8) & 1, (control >> 9) & 1,
-                        (control >> 20) & 3, Register(g::XE_GPU_REG_RB_COPY_DEST_BASE),
-                        Register(g::XE_GPU_REG_RB_COPY_DEST_PITCH) & 0x3FFF,
-                        (Register(g::XE_GPU_REG_RB_COPY_DEST_PITCH) >> 16) & 0x3FFF,
-                        (Register(g::XE_GPU_REG_RB_COPY_DEST_INFO) >> 7) & 0x3F);
-          }
           destinos_->Copiar(rex::x360::LeerRegistrosCopia(registers_.data()));
           break;
         }
@@ -1060,83 +956,6 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
            index == 0x2302;
   }
 
-  // --- Draw-skipping modes (ZL + ZR + Right), to find which kind of draw makes an artifact: each press goes to the next
-  // mode, logs it and takes a capture a few frames later. Classified by the blend of target 0 (RB_BLENDCONTROL0) and the
-  // primitive, as the frame traces show Dead Space 2's draws.
-  static constexpr uint32_t kSkipModes = 8;
-  static constexpr const char* kSkipModeNames[kSkipModes] = {
-      "none (normal rendering)",
-      "SAFE MODE: the renderer's NFS shortcuts off, nothing skipped",
-      "deferred lights (blend ONE+ONE, 01010101) and their stencil passes",
-      "additive effects (SRC_ALPHA+ONE, 00010106)",
-      "alpha-blended (SRC_ALPHA+INV_SRC_ALPHA: 00010706, 07060706)",
-      "quad lists (prim 13)",
-      "everything blended (blend other than 00010001)",
-      "alpha-tested (RB_COLORCONTROL alpha test on)",
-  };
-  // The renderer's NFS shortcuts (see the declarations at the top): on as the SDK defaults, off in safe mode.
-  static void SetNfsShortcuts(bool on) {
-    REXCVAR_SET(nfsmw_nativo_saltar_invisibles, on);
-    REXCVAR_SET(nfsmw_nativo_sin_ps_sin_color, on);
-    REXCVAR_SET(nfsmw_nativo_sin_desenfoque, on);
-    REXCVAR_SET(nfsmw_nativo_pcf_barato, on);
-    REXCVAR_SET(nfsmw_nativo_sombra_minimo, on);
-    REXCVAR_SET(nfsmw_nativo_z_temprana, on);
-    REXCVAR_SET(nfsmw_nativo_cielo_aplazado, on);
-    REXCVAR_SET(nfsmw_dk_constantes_por_diferencias, on);
-    REXCVAR_SET(nfsmw_nativo_saltar_borrados_repetidos, on);
-    REXCVAR_SET(nfsmw_nativo_resolver_sin_copia, on);
-    REXCVAR_SET(nfsmw_nativo_intercambiar_sin_borrado, on);
-    REXCVAR_SET(nfsmw_nativo_frontal_perezoso, on);
-    REXCVAR_SET(nfsmw_dk_borrar_area_util, on);
-    REXCVAR_SET(nfsmw_dk_borrado_color_aplazado, on);
-    REXCVAR_SET(nfsmw_dk_borrado_z_aplazado, on);
-  }
-
-  bool SkippedByMode() const {
-    namespace g = rex::graphics;
-    const uint32_t blend = Register(g::XE_GPU_REG_RB_BLENDCONTROL0);
-    const uint32_t mask = Register(g::XE_GPU_REG_RB_COLOR_MASK);
-    const uint32_t prim = Register(g::XE_GPU_REG_VGT_DRAW_INITIATOR) & 0x3F;
-    const uint32_t colorctl = Register(g::XE_GPU_REG_RB_COLORCONTROL);
-    switch (skip_mode_ - 1) {  // mode 1 is the safe mode, which skips nothing
-      case 1:
-        // The light volumes add ONE+ONE; their stencil-marking passes write no color (mask 0) in depth-only mode.
-        return blend == 0x01010101 || (!(mask & 0xF) && (Register(g::XE_GPU_REG_RB_DEPTHCONTROL) & 0x1));
-      case 2: return (mask & 0xF) && blend == 0x00010106;
-      case 3: return (mask & 0xF) && (blend == 0x00010706 || blend == 0x07060706);
-      case 4: return prim == 13;
-      case 5: return (mask & 0xF) && blend != 0x00010001;
-      case 6: return ((colorctl >> 3) & 0x1) && (colorctl & 0x7) != 7;
-      default: return false;
-    }
-  }
-
-  // The lamp glow (gVFGlowInfo) and corona (modulate_by_corona_info_vs) vertex shaders: both read the lamp's
-  // visibility from a texture in the vertex shader (tfetch2DVertice) and build their quads from it. Suspects for the
-  // streaks next to flickering lamps; sin_resplandor.flag next to the NRO leaves them out to tell.
-  static bool IsGlowShader(const rex::x360::EntradaShader* entry) {
-    return entry && (entry->huella_contenedor == UINT64_C(0x36929751F8A50138) ||
-                     entry->huella_contenedor == UINT64_C(0xC94E83E0DB28EA74));
-  }
-
-  // Once per patched variant: the vertex fetches D3D wrote for the declaration (format, stride, offset), which the
-  // container does not have.
-  void LogGlowFetches(const rex::x360::EntradaShader* entry) {
-    const uint64_t key = XXH3_64bits(microcode_.data(), microcode_.size() * sizeof(uint32_t));
-    if (glow_logged_.size() >= 16 || !glow_logged_.insert(key).second) return;
-    std::string fetches;
-    for (size_t i = 0; i + 2 < microcode_.size(); i += 3) {
-      const uint32_t w0 = microcode_[i], w1 = microcode_[i + 1], w2 = microcode_[i + 2];
-      if ((w0 & 0x1F) != 0 || !((w0 >> 19) & 1)) continue;  // vertex fetch: opcode 0, must-be-one bit
-      fetches += fmt::format(" [slot {} r{} const {}.{} format {} signed {} int {} stride {} offset {} swz {:03X}]",
-                             i / 3, (w0 >> 12) & 0x3F, (w0 >> 20) & 0x1F, (w0 >> 25) & 3, (w1 >> 16) & 0x3F,
-                             (w1 >> 14) & 1, (w1 >> 13) & 1, w2 & 0xFF, (w2 >> 8) & 0x7FFFFF, w1 & 0xFFF);
-    }
-    REXLOG_INFO("[gpu] glow VS {:016X} (n{}): {} words, fetches:{}", entry->huella_contenedor, entry->numero,
-                microcode_.size(), fetches);
-  }
-
   // An IM_LOAD / IM_LOAD_IMMEDIATE of type 0 (VS) or 1 (PS), its microcode in microcode_ (host order).
   void ShaderLoaded(uint32_t type, uint32_t physical) {
     const rex::x360::EntradaShader* entry = dante::shaders::Global().Identificar(type == 0, physical, microcode_);
@@ -1156,7 +975,6 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
     vs_physical_ = physical;
     vs_ = entry;
     vs_microcode_ = microcode_;  // patched by D3D: the vertex input is read from here
-    if (IsGlowShader(entry)) LogGlowFetches(entry);
     // The same microcode keeps its generation, so the renderer's per-generation caches stay valid.
     const uint64_t key = XXH3_64bits(vs_microcode_.data(), vs_microcode_.size() * sizeof(uint32_t)) ^
                          vs_microcode_.size();
@@ -1166,7 +984,6 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
 
   void Draw() {
     ++geometria_;
-    FrameTraceDraw();
     namespace g = rex::graphics;
     // Depth only (RB_MODECONTROL 5): the GPU runs no pixel shader, so the VS is enough.
     const bool depth_only = (Register(g::XE_GPU_REG_RB_MODECONTROL) & 0x7) == 5;
@@ -1198,7 +1015,6 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
       rect_clear = v >= 0.0f && v <= 1.0f;
     }
     if (!vs_ && ((msaa && (Register(g::XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR) & 0x3FFF) >= 0x2000) || rect_clear)) {
-      if (draw_tracing_) DrawTraceLine(true, "Direct3D clear, emulated");
       EmulateClear(msaa);
       return;
     }
@@ -1216,31 +1032,11 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
                       ps_ ? int(ps_->numero) : -1);
         }
       }
-      if (draw_tracing_) DrawTraceLine(false, "no VS");
       return;
     }
     if (!ps_ && !depth_only) {
       ++sin_ps_;
       return;
-    }
-    if (skip_mode_ > 1 && SkippedByMode()) {
-      ++skipped_by_mode_;
-      return;
-    }
-    if (IsGlowShader(vs_)) {
-      if (glow_draws_logged_ < 12) {
-        ++glow_draws_logged_;
-        // Fetch constant 17 (vertex texture register 1): the visibility texture the shader reads.
-        const uint32_t f = 0x4800 + 17 * 6;
-        // Vertex fetch constants 31.0-31.2 (where the containers point their fetches) share fetch slot 31's words.
-        const uint32_t v = 0x4800 + 31 * 6;
-        REXLOG_INFO("[gpu] glow draw (VS n{}, PS n{}): texture fetch 17 {:08X} {:08X} {:08X} {:08X} {:08X} {:08X}; "
-                    "vertex fetch 31.x {:08X} {:08X} {:08X} {:08X} {:08X} {:08X}",
-                    vs_->numero, ps_ ? ps_->numero : 0, Register(f), Register(f + 1), Register(f + 2),
-                    Register(f + 3), Register(f + 4), Register(f + 5), Register(v), Register(v + 1), Register(v + 2),
-                    Register(v + 3), Register(v + 4), Register(v + 5));
-      }
-      if (hide_glow_) return;
     }
     // Diagnostics (Report): formats and primitive types of what is sent.
     const uint32_t mask = Register(rex::graphics::XE_GPU_REG_RB_COLOR_MASK);
@@ -1285,8 +1081,7 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
     request.generacion_fetch = generacion_fetch_;
     request.generacion_encuadre = generacion_encuadre_;
     ++enviados_;
-    const bool drawn = destinos_->Dibujar(request);
-    if (draw_tracing_) DrawTraceLine(drawn);
+    destinos_->Dibujar(request);
     if (msaa) {
       ++generacion_encuadre_;  // back to the mirror's for the next draw
       ++msaa_draws_;
@@ -1469,313 +1264,6 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
     }
   }
 
-  // The frame just presented as a 24-bit BMP in capturas/ next to the NRO (ZL + ZR + Down): what is on screen, to look
-  // at rendering problems without describing them.
-  // Captures every dante_auto_captura_s and frame dumps on their schedule (seconds since the first Swap).
-  void AutomaticCollection() {
-    if (!telemetry_) return;
-    const auto now = Clock::now();
-    if (first_swap_ == Clock::time_point{}) return;
-    const double t = std::chrono::duration<double>(now - first_swap_).count();
-    const int32_t every = REXCVAR_GET(dante_auto_captura_s);
-    if (every > 0 && t >= next_auto_capture_s_) {
-      next_auto_capture_s_ = t + every;
-      SaveCapture(true);
-    }
-    const int32_t max_dumps = REXCVAR_GET(dante_auto_volcados_max);
-    if (auto_dumps_ < uint32_t(std::max(max_dumps, 0))) {
-      if (next_auto_dump_s_ < 0) next_auto_dump_s_ = REXCVAR_GET(dante_auto_volcado_primero_s);
-      if (t >= next_auto_dump_s_) {
-        ++auto_dumps_;
-        const int32_t gap = REXCVAR_GET(dante_auto_volcado_cada_s);
-        next_auto_dump_s_ = gap > 0 ? t + gap : 1e30;
-        REXLOG_INFO("[gpu] automatic frame dump {} at {:.0f} s", auto_dumps_, t);
-        destinos_->PedirVolcado();
-      }
-    }
-  }
-
-  void SaveCapture(bool small = false) {
-    rex::ui::RawImage image;
-    if (!presenter_ || !presenter_->CaptureGuestOutput(image) || !image.width || !image.height) {
-      REXLOG_WARN("[gpu] capture: no guest output to capture");
-      return;
-    }
-    const auto folder = rex::filesystem::GetExecutableFolder() / "capturas";
-    std::error_code ec;
-    std::filesystem::create_directories(folder, ec);
-    char name[32];
-    std::filesystem::path path;
-    if (small) {
-      std::snprintf(name, sizeof(name), "auto_%04u.bmp", auto_captures_++);
-      path = folder / name;
-      // Half size: each 2x2 block averaged into the top-left texel, then compacted (0.7 MB instead of 2.7 MB).
-      const uint32_t w = image.width / 2, h = image.height / 2;
-      std::vector<uint8_t> half(size_t(w) * h * 4);
-      for (uint32_t y = 0; y < h; ++y) {
-        for (uint32_t x = 0; x < w; ++x) {
-          const uint8_t* a = image.data.data() + size_t(2 * y) * image.stride + size_t(2 * x) * 4;
-          const uint8_t* b = a + image.stride;
-          for (int k = 0; k < 4; ++k) half[(size_t(y) * w + x) * 4 + k] = uint8_t((a[k] + a[k + 4] + b[k] + b[k + 4] + 2) / 4);
-        }
-      }
-      image.data = std::move(half);
-      image.width = w;
-      image.height = h;
-      image.stride = size_t(w) * 4;
-    } else {
-      // The first free number once, then counted: the file is written later, so looking for it again found the same
-      // free name and captures taken close together overwrote each other.
-      if (next_capture_ == UINT32_MAX) {
-        for (next_capture_ = 0; next_capture_ < 1000; ++next_capture_) {
-          std::snprintf(name, sizeof(name), "cap_%03u.bmp", next_capture_);
-          if (!std::filesystem::exists(folder / name, ec)) break;
-        }
-      }
-      std::snprintf(name, sizeof(name), "cap_%03u.bmp", next_capture_++);
-      path = folder / name;
-    }
-    const uint32_t row = image.width * 3;  // 1280 * 3 is a multiple of 4; others are padded below
-    const uint32_t padded = (row + 3) & ~3u;
-    const uint32_t pixels = padded * image.height;
-    uint8_t header[54] = {'B', 'M'};
-    auto put32 = [&](size_t at, uint32_t v) { std::memcpy(header + at, &v, 4); };
-    put32(2, 54 + pixels);
-    put32(10, 54);
-    put32(14, 40);
-    put32(18, image.width);
-    put32(22, image.height);
-    header[26] = 1;
-    header[28] = 24;
-    put32(34, pixels);
-    std::vector<uint8_t> data(pixels, 0);
-    for (uint32_t y = 0; y < image.height; ++y) {
-      const uint8_t* s = image.data.data() + size_t(image.height - 1 - y) * image.stride;  // BMP rows go bottom-up
-      uint8_t* d = data.data() + size_t(y) * padded;
-      for (uint32_t x = 0; x < image.width; ++x, s += 4, d += 3) {
-        d[0] = s[2];
-        d[1] = s[1];
-        d[2] = s[0];
-      }
-    }
-    // One write, on a thread of its own: small writes to the SD card take 10-50 ms each, and the ring thread must not
-    // wait for them (the game stalls with it).
-    std::vector<uint8_t> file(header, header + sizeof(header));
-    file.insert(file.end(), data.begin(), data.end());
-    const bool log = !small || auto_captures_ % 12 == 1;  // the automatic ones once a minute in the log
-    rex::x360::EncolarEscrituraSd([path, file = std::move(file), log, w = image.width, h = image.height]() {
-      if (FILE* f = std::fopen(path.string().c_str(), "wb")) {
-        std::fwrite(file.data(), 1, file.size(), f);
-        std::fclose(f);
-        if (log) REXLOG_INFO("[gpu] capture: {} ({}x{})", path.string(), w, h);
-      } else {
-        REXLOG_WARN("[gpu] capture: could not write {}", path.string());
-      }
-    });
-  }
-
-  // One line per draw of a traced light frame: what it draws with and what became of it.
-  void DrawTraceLine(bool drawn, const char* why = nullptr) {
-    namespace g = rex::graphics;
-    if (draw_trace_n_ >= draw_trace_cap_) return;
-    const uint32_t init = Register(g::XE_GPU_REG_VGT_DRAW_INITIATOR);
-    REXLOG_INFO("[draws] {:3} prim {} n {} vs {} ps {} c0 {:03X}/f{} z {:03X} mask {:04X} blend0 {:08X} colorctl {:08X} "
-                "depthctl {:08X} stencil {:08X} mode {} pitch {} msaa {} -> {}",
-                draw_trace_n_++, init & 0x3F, init >> 16, vs_ ? int(vs_->numero) : -1, ps_ ? int(ps_->numero) : -1,
-                Register(g::XE_GPU_REG_RB_COLOR_INFO) & 0xFFF, (Register(g::XE_GPU_REG_RB_COLOR_INFO) >> 16) & 0xF,
-                Register(g::XE_GPU_REG_RB_DEPTH_INFO) & 0xFFF,
-                Register(g::XE_GPU_REG_RB_COLOR_MASK), Register(g::XE_GPU_REG_RB_BLENDCONTROL0),
-                Register(g::XE_GPU_REG_RB_COLORCONTROL), Register(g::XE_GPU_REG_RB_DEPTHCONTROL),
-                Register(g::XE_GPU_REG_RB_STENCILREFMASK), Register(g::XE_GPU_REG_RB_MODECONTROL) & 0x7,
-                Register(g::XE_GPU_REG_RB_SURFACE_INFO) & 0x3FFF, (Register(g::XE_GPU_REG_RB_SURFACE_INFO) >> 16) & 0x3,
-                why ? why : drawn ? "drawn" : "REJECTED by the renderer");
-    // The vertex input as D3D patched it: each fetch's format, swizzle, stride and offset. No vertex bytes: guest
-    // memory is committed lazily, and even inside a vertex buffer the pages before the draw's first index may be
-    // unmapped (reading vertex 0 crashed in game).
-    for (size_t i = 0; i + 2 < vs_microcode_.size() && vs_; i += 3) {
-      const uint32_t w0 = vs_microcode_[i], w1 = vs_microcode_[i + 1], w2 = vs_microcode_[i + 2];
-      if ((w0 & 0x1F) != 0 || !((w0 >> 19) & 1)) continue;
-      REXLOG_INFO("[draws]       vfetch r{} const {}.{} format {} swz {:03X} signed {} int {} stride {} offset {}",
-                  (w0 >> 12) & 0x3F, (w0 >> 20) & 0x1F, (w0 >> 25) & 3, (w1 >> 16) & 0x3F, w1 & 0xFFF, (w1 >> 12) & 1,
-                  (w1 >> 13) & 1, (w2 & 0xFF) * 4, ((w2 >> 8) & 0x7FFFFF) * 4);
-    }
-    // The pixel shader's textures: fetch constant of each sampler (base, format, size, dimension, swizzle, signs).
-    for (size_t i = 0; ps_ && i < ps_->samplers.size() && i < 4; ++i) {
-      const uint32_t reg = ps_->samplers[i].registro;
-      if (reg >= 32) continue;
-      const uint32_t* f = &registers_[0x4800 + reg * 6];
-      REXLOG_INFO("[draws]       s{} tipo {}: base {:08X} fmt {} {}x{} dim {} swz {:03X} signs {:02X} tiled {} type {}",
-                  reg, ps_->samplers[i].tipo, f[1] & 0xFFFFF000u, f[1] & 0x3F, (f[2] & 0x1FFF) + 1,
-                  ((f[2] >> 13) & 0x1FFF) + 1, (f[5] >> 9) & 0x3, (f[3] >> 1) & 0xFFF, (f[0] >> 2) & 0xFF,
-                  (f[0] >> 31) & 1, f[0] & 0x3);
-    }
-  }
-
-  // --- Frame trace -----------------------------------------------------------
-  //
-  // How the game builds a heavy frame, once a minute up to three times: each pass (a run of draws into the same
-  // targets with the same window offset), each resolve and the Swap, one line each. This is what is needed to
-  // compare the frame with what the renderer does (multisampling, predicated tiling, EDRAM bases).
-
-  struct FrameState {
-    uint64_t draws = 0;              // geometry draws in the frame being counted
-    uint64_t predicated_skipped = 0;
-  };
-
-  static constexpr uint32_t kTraceMaxLines = 400;
-
-  void FrameTraceSwap() {
-    const auto now = Clock::now();
-    if (tracing_) {
-      FrameTraceClosePass();
-      REXLOG_INFO("[frame] end: {} geometry draws, {} predicated packets skipped, {} passes, swap frontbuffer "
-                  "fetch0 {:08X} {:08X}",
-                  frame_.draws, frame_.predicated_skipped, trace_pass_, Register(0x4800), Register(0x4801));
-      tracing_ = false;
-      ++traces_done_;
-      next_trace_ = now + std::chrono::seconds(std::max(REXCVAR_GET(dante_traza_cada_s), 1));
-    } else if (telemetry_ && traces_done_ < uint32_t(std::max(REXCVAR_GET(dante_trazas_max), 0)) && frame_.draws >= 800 &&
-               now >= next_trace_ && now - first_swap_ >= std::chrono::seconds(60)) {
-      tracing_ = true;
-      trace_lines_ = 0;
-      trace_pass_ = 0;
-      trace_key_.fill(0);
-      trace_pass_draws_ = 0;
-      REXLOG_INFO("[frame] trace {} of a frame ({} draws in the previous one)", traces_done_ + 1, frame_.draws);
-    }
-    // Per-draw trace of a light frame (loading screens, menus: the interface), with telemetry.
-    if (draw_tracing_) {
-      draw_tracing_ = false;
-      REXLOG_INFO("[draws] end of the traced frame");
-    } else if (telemetry_ && draw_traces_ < 8 && frame_.draws >= 10 && frame_.draws <= 400 && now >= next_draw_trace_) {
-      draw_tracing_ = true;
-      ++draw_traces_;
-      draw_trace_n_ = 0;
-      draw_trace_cap_ = 400;
-      next_draw_trace_ = now + std::chrono::seconds(20);
-      REXLOG_INFO("[draws] trace {} of a light frame ({} draws in the previous one)", draw_traces_, frame_.draws);
-    }
-    if (first_swap_ == Clock::time_point{}) first_swap_ = now;
-    frame_ = {};
-  }
-
-  void FrameTraceLine(const std::string& line) {
-    if (trace_lines_++ < kTraceMaxLines) REXLOG_INFO("[frame] {}", line);
-  }
-
-  std::array<uint32_t, 9> FrameTraceKey() const {
-    namespace g = rex::graphics;
-    return {Register(g::XE_GPU_REG_RB_SURFACE_INFO), Register(g::XE_GPU_REG_RB_COLOR_INFO),
-            Register(g::XE_GPU_REG_RB_COLOR1_INFO),  Register(g::XE_GPU_REG_RB_COLOR2_INFO),
-            Register(g::XE_GPU_REG_RB_COLOR3_INFO),  Register(g::XE_GPU_REG_RB_DEPTH_INFO),
-            Register(g::XE_GPU_REG_PA_SC_WINDOW_OFFSET), Register(g::XE_GPU_REG_RB_MODECONTROL),
-            Register(g::XE_GPU_REG_RB_COLOR_MASK)};
-  }
-
-  void FrameTraceClosePass() {
-    if (!trace_pass_draws_) return;
-    const auto& k = trace_key_;
-    std::string colors;
-    for (uint32_t i = 0; i < 4; ++i) {
-      if ((k[8] >> (i * 4)) & 0xF) {
-        colors += fmt::format(" c{}={:03X}/f{}", i, k[1 + i] & 0xFFF, (k[1 + i] >> 16) & 0xF);
-      }
-    }
-    FrameTraceLine(fmt::format(
-        "pass {}: {} draws ({} unknown VS), pitch {} msaa {}{} z={:03X}/f{} window ({},{}) mode {} "
-        "scissor {:08X}-{:08X} vport x {:.1f}+{:.1f} y {:.1f}+{:.1f} bins {:X}/{:X}",
-        trace_pass_, trace_pass_draws_, trace_pass_no_vs_, k[0] & 0x3FFF, (k[0] >> 16) & 0x3, colors, k[5] & 0xFFF,
-        (k[5] >> 16) & 0x1, int32_t(k[6] << 17) >> 17, int32_t((k[6] >> 16) << 17) >> 17, k[7] & 0x7,
-        trace_scissor_tl_, trace_scissor_br_, trace_vport_[0], trace_vport_[1], trace_vport_[2], trace_vport_[3],
-        bin_select_, bin_mask_));
-    ++trace_pass_;
-    trace_pass_draws_ = 0;
-    trace_pass_no_vs_ = 0;
-  }
-
-  void FrameTraceDraw() {
-    ++frame_.draws;
-    if (!tracing_) return;
-    const auto key = FrameTraceKey();
-    if (key != trace_key_ || !trace_pass_draws_) {
-      FrameTraceClosePass();
-      trace_key_ = key;
-      namespace g = rex::graphics;
-      trace_scissor_tl_ = Register(g::XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL);
-      trace_scissor_br_ = Register(g::XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR);
-      for (uint32_t i = 0; i < 4; ++i) {
-        // PA_CL_VPORT_XSCALE, XOFFSET, YSCALE, YOFFSET
-        const uint32_t v = Register(g::XE_GPU_REG_PA_CL_VPORT_XSCALE + i);
-        std::memcpy(&trace_vport_[i], &v, 4);
-      }
-    }
-    ++trace_pass_draws_;
-    trace_pass_no_vs_ += vs_ == nullptr;
-  }
-
-  // Every distinct resolve, once, when it is first seen (up to 200): the effects (kinesis, hits, screen blood) show up
-  // with the time they start, to compare with what is on screen.
-  void ResolveCatalog() {
-    namespace g = rex::graphics;
-    if (resolve_seen_.size() >= 200) return;
-    const uint32_t control = Register(g::XE_GPU_REG_RB_COPY_CONTROL);
-    const uint32_t source = control & 0x7;
-    static constexpr uint32_t kColorInfo[4] = {g::XE_GPU_REG_RB_COLOR_INFO, g::XE_GPU_REG_RB_COLOR1_INFO,
-                                               g::XE_GPU_REG_RB_COLOR2_INFO, g::XE_GPU_REG_RB_COLOR3_INFO};
-    const uint32_t src_info = source < 4 ? Register(kColorInfo[source]) : Register(g::XE_GPU_REG_RB_DEPTH_INFO);
-    const uint32_t surface = Register(g::XE_GPU_REG_RB_SURFACE_INFO);
-    const uint32_t tl = Register(g::XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL), br = Register(g::XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR);
-    const uint32_t dest = Register(g::XE_GPU_REG_RB_COPY_DEST_BASE), pitch = Register(g::XE_GPU_REG_RB_COPY_DEST_PITCH);
-    const uint32_t info = Register(g::XE_GPU_REG_RB_COPY_DEST_INFO), offset = Register(g::XE_GPU_REG_PA_SC_WINDOW_OFFSET);
-    // The rectangle D3D puts in fetch constant 0 (three vertices), as the renderer reads it.
-    const uint32_t f0 = Register(0x4800), f1 = Register(0x4801);
-    float rect[6] = {};
-    if ((f0 & 0x3) == 3 && ((f1 >> 2) & 0xFFFFFF) == 6) {
-      const uint8_t* v = memory_->TranslatePhysical(f0 & ~uint32_t(0x3));
-      for (int i = 0; i < 6; ++i) {
-        uint32_t w;
-        std::memcpy(&w, v + i * 4, 4);
-        w = xenos::GpuSwap(w, static_cast<xenos::Endian>(f1 & 0x3));
-        std::memcpy(&rect[i], &w, 4);
-      }
-    }
-    const uint64_t key = XXH3_64bits(std::array<uint32_t, 10>{control, src_info, surface, tl, br, dest, pitch, info,
-                                                              offset, uint32_t(rect[0]) ^ uint32_t(rect[1]) << 16}
-                                         .data(),
-                                     40);
-    if (!resolve_seen_.insert(key).second) return;
-    REXLOG_INFO("[resolve] new: {} base {:03X} f{} pitch {} msaa {} scissor {:08X}-{:08X} window ({},{}) rect "
-                "({:.0f},{:.0f})-({:.0f},{:.0f})-({:.0f},{:.0f}) -> {:08X} pitch {} height {} fmt {} swap {} control "
-                "{:08X}",
-                source < 4 ? fmt::format("c{}", source) : std::string("depth"), src_info & 0xFFF,
-                (src_info >> 16) & 0xF, surface & 0x3FFF, (surface >> 16) & 0x3, tl, br, int32_t(offset << 17) >> 17,
-                int32_t((offset >> 16) << 17) >> 17, rect[0], rect[1], rect[2], rect[3], rect[4], rect[5], dest,
-                pitch & 0x3FFF, (pitch >> 16) & 0x3FFF, (info >> 7) & 0x3F, (info >> 24) & 0x1, control);
-  }
-
-  void FrameTraceCopy() {
-    if (!tracing_) return;
-    FrameTraceClosePass();
-    namespace g = rex::graphics;
-    const uint32_t control = Register(g::XE_GPU_REG_RB_COPY_CONTROL);
-    const uint32_t source = control & 0x7;
-    const uint32_t surface = Register(g::XE_GPU_REG_RB_SURFACE_INFO);
-    static constexpr uint32_t kColorInfo[4] = {g::XE_GPU_REG_RB_COLOR_INFO, g::XE_GPU_REG_RB_COLOR1_INFO,
-                                               g::XE_GPU_REG_RB_COLOR2_INFO, g::XE_GPU_REG_RB_COLOR3_INFO};
-    const uint32_t src_info = source < 4 ? Register(kColorInfo[source]) : Register(g::XE_GPU_REG_RB_DEPTH_INFO);
-    const uint32_t dest_info = Register(g::XE_GPU_REG_RB_COPY_DEST_INFO);
-    const uint32_t dest_pitch = Register(g::XE_GPU_REG_RB_COPY_DEST_PITCH);
-    const uint32_t offset = Register(g::XE_GPU_REG_PA_SC_WINDOW_OFFSET);
-    FrameTraceLine(fmt::format(
-        "resolve from {} base {:03X} f{} pitch {} msaa {} rect {:08X}-{:08X} window ({},{}) -> {:08X} pitch {} "
-        "height {} fmt {} control {:08X} (copy {}, clear color {} depth {})",
-        source < 4 ? fmt::format("c{}", source) : std::string("depth"), src_info & 0xFFF, (src_info >> 16) & 0xF,
-        surface & 0x3FFF, (surface >> 16) & 0x3, Register(g::XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL),
-        Register(g::XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR), int32_t(offset << 17) >> 17,
-        int32_t((offset >> 16) << 17) >> 17, Register(g::XE_GPU_REG_RB_COPY_DEST_BASE), dest_pitch & 0x3FFF,
-        (dest_pitch >> 16) & 0x3FFF, (dest_info >> 7) & 0x3F, control, (control >> 20) & 0x3, (control >> 8) & 0x1,
-        (control >> 9) & 0x1));
-  }
 #endif
 
   // EVENT_WRITE_ZPD, as the SDK's CommandProcessor::ExecutePacketType3_EVENT_WRITE_ZPD: D3D marks the
@@ -1836,35 +1324,14 @@ class RingGraphicsSystem final : public rex::system::IGraphicsSystem {
   std::array<uint64_t, 16> color_formats_{};
   std::array<uint64_t, 2> depth_formats_{};
   std::array<uint64_t, 32> primitive_types_{};
-  std::unordered_set<uint64_t> resolve_seen_;  // ResolveCatalog
   std::unordered_set<std::string> clear_shapes_;  // EmulateClear
   uint32_t clear_rect_ = 0;          // guest buffer with the emulated clears' rectangle
-  double next_auto_capture_s_ = 10, next_auto_dump_s_ = -1;  // AutomaticCollection
-  uint32_t auto_captures_ = 0, auto_dumps_ = 0;
   uint64_t depth_greater_ = 0, depth_less_ = 0, clears_ = 0, clears_logged_ = 0, msaa_draws_ = 0;
-  FrameState frame_;
-  bool telemetry_ = false;
-  bool hide_glow_ = false;  // sin_resplandor.flag
   std::array<uint64_t, 8> index_orders_{};
   uint32_t vs_physical_ = 0;
   uint32_t syncs_reported_ = 0;
-  uint32_t skip_mode_ = 0, capture_after_skip_ = 0, skip_resume_ = 0;
-  uint64_t skipped_by_mode_ = 0;
   uint64_t clears_logged_1x_ = 0;
-  std::unordered_set<uint64_t> glow_logged_;
   std::unordered_set<uint64_t> unknown_vs_logged_;
-  uint32_t glow_draws_logged_ = 0;
-  bool draw_tracing_ = false;
-  uint32_t draw_traces_ = 0, draw_trace_n_ = 0, draw_trace_cap_ = 400;
-  uint32_t next_capture_ = UINT32_MAX;  // SaveCapture
-  Clock::time_point next_draw_trace_{};
-  bool tracing_ = false;
-  uint32_t traces_done_ = 0, trace_lines_ = 0, trace_pass_ = 0;
-  uint64_t trace_pass_draws_ = 0, trace_pass_no_vs_ = 0;
-  std::array<uint32_t, 9> trace_key_{};
-  uint32_t trace_scissor_tl_ = 0, trace_scissor_br_ = 0;
-  float trace_vport_[4] = {};
-  Clock::time_point next_trace_{}, first_swap_{};
 #endif
   uint64_t swaps_ = 0, draws_ = 0, packets_ = 0, waits_cut_short_ = 0;
   uint64_t reg_mem_waits_ = 0, reg_mem_wait_ns_ = 0;  // WAIT_REG_MEM that had to wait, and how long in total

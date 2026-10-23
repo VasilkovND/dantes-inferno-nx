@@ -31,6 +31,12 @@
 #include "dante_god.h"
 #include "dante_gpu.h"
 
+#if defined(__SWITCH__)
+// The SDK's debug shortcuts (ZL + ZR + Down / Left / Right / R ...: captures, frame dumps, draw-skipping modes, stack
+// sampling): off in a release whatever dante.toml says; ZL + ZR + Up, the FPS counter, stays.
+REXCVAR_DECLARE(bool, switch_atajos_depuracion);
+#endif
+
 REXCVAR_DEFINE_STRING(dante_game, "", "Dante", "Carpeta del juego (disco extraido + default.xexp). Vacio: game/ junto al ejecutable.");
 
 class DanteApp : public rex::ReXApp {
@@ -67,7 +73,12 @@ class DanteApp : public rex::ReXApp {
     paths.game_data_root = folder / "game";
   }
 
-  void OnPostInitLogging() override { dante::cpu::InformarSistema(); }
+  void OnPostInitLogging() override {
+#if defined(__SWITCH__)
+    REXCVAR_SET(switch_atajos_depuracion, false);
+#endif
+    dante::cpu::InformarSistema();
+  }
 
   void OnLoadXexImage(std::string& xex_image) override {
     std::error_code ec;

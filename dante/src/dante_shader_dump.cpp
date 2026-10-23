@@ -8,11 +8,10 @@
 // guest memory (r3 = pFunction). Wrapping those two functions catches every shader the game really uses,
 // whatever its archive format, and the container is exactly what XenosRecomp reads.
 //
-// Each new container is written once to <NRO folder>/shaders_dump/{vs,ps}_<xxh3>.bin (XXH3_64bits of the
-// whole container, the key XenosRecomp itself uses). Copy that folder back to the PC to build the library.
-// Off by default now that the set is collected (writing ~1,300 files to the SD card froze the first load for
-// ~40 s); turn it on with --dante_shader_dump=true to collect shaders again. Containers the library does not have
-// are always written: copy them into the dump on the PC and rebuild the library.
+// Containers the library does not have are written once to <NRO folder>/shaders_dump/{vs,ps}_<xxh3>.bin (XXH3_64bits
+// of the whole container, the key XenosRecomp itself uses): copy them into the dump on the PC and rebuild the library.
+// (Dumping every container the game creates was a debug option until 1.1.0: writing ~1,300 files to the SD card froze
+// the first load for ~40 s.)
 //
 // The same two hooks feed the shader library (dante_shaders.h): before the call, which library entry the container
 // is; after it, where the new object keeps its microcode, so the ring can tell which shader an IM_LOAD is.
@@ -38,9 +37,6 @@
 #include <string>
 #include <unordered_set>
 
-REXCVAR_DEFINE_BOOL(dante_shader_dump, false, "Dante",
-                    "Write every shader container the game creates to shaders_dump/ next to the executable.");
-
 namespace {
 
 std::mutex g_mutex;
@@ -51,9 +47,9 @@ std::atomic<uint32_t> g_rejected{0};
 
 // `missing`: the library has no entry for it, or there is no library at all. Those are always written: without
 // dante_shaders.dslib next to the NRO the first start dumps the game's whole set (it creates every shader at startup),
-// which is how a player makes the library from their own copy (INSTALL.md). The rest only with dante_shader_dump.
+// which is how a player makes the library from their own copy (INSTALL.md).
 void Dump(uint8_t* base, uint32_t address, const char* stage, bool missing) {
-  if (!address || !(missing || REXCVAR_GET(dante_shader_dump))) return;
+  if (!address || !missing) return;
   const uint32_t flags = REX_LOAD_U32(address);
   const uint32_t virtual_size = REX_LOAD_U32(address + 4);
   const uint32_t physical_size = REX_LOAD_U32(address + 8);

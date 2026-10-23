@@ -142,7 +142,8 @@ The game's buffer holds each frame upside down against FFmpeg's picture, three w
 with `flip = -1`, the bitstream's first macroblock row being the picture's bottom row; the game's row pass (0x8269C360)
 addresses a row as `frame + (16 * row - 48) * stride` with a positive stride, so that first row is at the start of the
 buffer; and session 5, which wrote FFmpeg's picture as it is (its calibration decided on a black frame), showed the
-videos upside down. So frames are written mirrored (`dante_vp6_comprobar=true` compares with the game's decoder again).
+videos upside down. So frames are written mirrored (until 1.1.0 `dante_vp6_comprobar=true` compared with the game's
+decoder again; that debug option is gone).
 FFmpeg takes 4.5-9 ms a frame overclocked, 12-20 at stock, of the 33 a frame lasts.
 
 ## 6. Stock clocks (CPU 1020 MHz, GPU 307 MHz)
