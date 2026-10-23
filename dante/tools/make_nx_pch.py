@@ -10,6 +10,9 @@ no-op here unless the codegen emits that macro):
      drops the weak alias and the link fails with every sub_ symbol undefined.
   2. REX_RAW_ADDR_W(x, n): DS2's codegen writes it for stores; outside the official-SDK
      NX memory model it is REX_RAW_ADDR(x).
+  3. The interrupt locks per thread (below).
+  4. REX_SLOAD_*/REX_SSTORE_*: guest stack accesses without volatile (tools/patch_stack_access.py).
+  5. dante_regcheck_fail: the check build of tools/patch_local_regs.py (PLR_CHECK=1).
 
 Usage: make_nx_pch.py <generated/default/dantes_inferno_pch.h> <out.h>
 """
@@ -97,6 +100,32 @@ inline i32& ppc_msr_profundidad_() {
   } while (0)
 """
 text = text[:i] + NEW_LOCKS + text[j:]
+
+# 4. The guest stack accesses tools/patch_stack_access.py marks: plain (memcpy, alias-safe) instead of volatile, so the
+#    compiler may keep a spilled local in a register or pair the helpers' stores. The stack belongs to one thread. (From
+#    gears2-nx; on the Switch REX_PHYS_HOST_OFFSET is 0, and the stack is never in the physical view.)
+if "REX_SLOAD_U32" not in text:
+    text = text.rstrip() + """
+
+// Switch (make_nx_pch.py, point 4): guest stack accesses (r1), without volatile.
+#define REX_SLOAD_U8(x) ({ u8 rex_sv_; __builtin_memcpy(&rex_sv_, base + (u32)(x), 1); rex_sv_; })
+#define REX_SLOAD_U16(x) ({ u16 rex_sv_; __builtin_memcpy(&rex_sv_, base + (u32)(x), 2); __builtin_bswap16(rex_sv_); })
+#define REX_SLOAD_U32(x) ({ u32 rex_sv_; __builtin_memcpy(&rex_sv_, base + (u32)(x), 4); __builtin_bswap32(rex_sv_); })
+#define REX_SLOAD_U64(x) ({ u64 rex_sv_; __builtin_memcpy(&rex_sv_, base + (u32)(x), 8); __builtin_bswap64(rex_sv_); })
+#define REX_SSTORE_U8(x, y) ({ u8 rex_sv_ = (u8)(y); __builtin_memcpy(base + (u32)(x), &rex_sv_, 1); })
+#define REX_SSTORE_U16(x, y) ({ u16 rex_sv_ = __builtin_bswap16(y); __builtin_memcpy(base + (u32)(x), &rex_sv_, 2); })
+#define REX_SSTORE_U32(x, y) ({ u32 rex_sv_ = __builtin_bswap32(y); __builtin_memcpy(base + (u32)(x), &rex_sv_, 4); })
+#define REX_SSTORE_U64(x, y) ({ u64 rex_sv_ = __builtin_bswap64(y); __builtin_memcpy(base + (u32)(x), &rex_sv_, 8); })
+"""
+
+# 5. The check build of tools/patch_local_regs.py (PLR_CHECK=1) reports through this (src/dante_cpu.cpp).
+if "dante_regcheck_fail" not in text:
+    text = text.rstrip() + """
+
+// Switch (make_nx_pch.py, point 5): tools/patch_local_regs.py's check build.
+extern "C" void dante_regcheck_fail(const char* function, const char* callee, int site, const char* regs,
+                                    const uint64_t* before, const PPCContext* ctx);
+"""
 
 # Only when it changes: every unit of the recompiled tree depends on this header through the PCH, so rewriting it
 # with the same text on each configure would make the next build recompile all of them.

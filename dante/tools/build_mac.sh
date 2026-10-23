@@ -81,6 +81,10 @@ if [ ! -f dante/out/sw/build.ninja ] || [ "${RECONFIGURE:-0}" = 1 ]; then
     -DREXSDK_DIR="$ROOT/sdk" -DDANTE_CODEGEN_DIR="$ROOT/dante/out/codegen" -DREXGLUE_SWITCH_DEKO3D=ON
 fi
 
+# The mirror of the generated tree (tools/prepare_tree.py) is made at configure time: refreshed here as well, for files
+# the codegen passes add (dantes_inferno_inline_helpers.h) and changes to the Switch PCH (tools/make_nx_pch.py).
+python3 dante/tools/prepare_tree.py dante/out/codegen/generated/default dante/out/sw/generated_nx | tail -1
+
 echo "== build ($JOBS jobs)"
 cmake --build dante/out/sw -j "$JOBS"
 ls -la dante/out/sw/dante.nro dante/out/shaders/dante_shaders.dslib dante/out/shaders/shadercache_dksh.bin

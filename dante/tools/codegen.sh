@@ -13,10 +13,13 @@
 #      the Mac's clang: only its `rexglue` tool is used.
 #   3. The manifest: Hell's Gate's, without its ultrawide mid-asm hook (PC only), plus codegen/names.toml.
 #   4. rexglue codegen, then Hell's Gate's apply_generated_patches.py. The build stops if any unresolved branch is left.
+#   5. Ours, for the CPU (from gears2-nx): patch_stack_access.py, patch_inline_calls.py and patch_local_regs.py (the
+#      guest registers in host locals; dante/CPU_OPTIMIZATION.md). LOCALREGS=0 skips the last; PLR_CHECK=1 makes the
+#      check build of it (calls verify its analysis at run time and log [regcheck]).
 set -euo pipefail
 
 if [ $# -ne 1 ]; then
-  sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 fi
 GAME=$(cd "$1" && pwd)
@@ -24,6 +27,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT="$ROOT/dante/out"
 CG="$OUT/codegen"
 JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN)}"
+LOCALREGS="${LOCALREGS:-1}"
 
 HELLS_GATE_COMMIT="3ce3993b0f03c77353f8f10fdcd982160c9a2d18"   # 2026-10-16, v0.8.4-beta
 REXGLUE_TAG="v0.10.0"
@@ -125,8 +129,15 @@ done
 
 # 4. Codegen (re-run only when an input changed) and the generated-code fixes.
 STAMP="$CG/inputs.sha"
-INPUTS=$(cat "$CG/game/default.xex" $( [ -f "$CG/game/default.xexp" ] && echo "$CG/game/default.xexp") "$CG/dantes_inferno_manifest.toml" \
-  "$CG/patches/generated/apply_generated_patches.py" "$REXGLUE" | shasum -a 256 | cut -d' ' -f1)
+INPUTS=$( (cat "$CG/game/default.xex" $( [ -f "$CG/game/default.xexp" ] && echo "$CG/game/default.xexp") "$CG/dantes_inferno_manifest.toml" \
+  "$CG/patches/generated/apply_generated_patches.py" "$REXGLUE" "$ROOT"/dante/tools/patch_stack_access.py \
+  "$ROOT"/dante/tools/patch_inline_calls.py "$ROOT"/dante/tools/patch_local_regs.py
+  echo "localregs=$LOCALREGS check=${PLR_CHECK:-0}"
+  # The generated functions the sources name (hooks, native callers) change what the passes do: those names.
+  NAMES=$(sed -n 's/^name = "\(.*\)"$/\1/p' "$CG/dantes_inferno_manifest.toml" | paste -sd'|' -)
+  cat $(find "$ROOT/dante/src" "$ROOT/sdk/src" "$ROOT/sdk/include" -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \
+    -o -name '*.cc' -o -name '*.inc' \) -not -path '*/codegen/*' | sort) | grep -oE "\b(sub_[0-9A-F]{8}|${NAMES:-sub_})\b" | sort -u) \
+  | shasum -a 256 | cut -d' ' -f1)
 if [ "$(cat "$STAMP" 2>/dev/null)" != "$INPUTS" ] || [ ! -f "$CG/generated/default/sources.cmake" ]; then
   # Generated and fixed in a staging folder, then only the files whose text changed are copied over generated/:
   # the others keep their dates, so after a small change (a name in names.toml) Ninja rebuilds a few units, not 135.
@@ -144,6 +155,23 @@ if [ "$(cat "$STAMP" 2>/dev/null)" != "$INPUTS" ] || [ ! -f "$CG/generated/defau
   tail -1 "$CG/apply_generated_patches.log"
   grep -q 'Remaining REX_FATAL unresolved traps: 0 ' "$CG/apply_generated_patches.log" || {
     echo "unresolved branches left in the generated code (see $CG/apply_generated_patches.log)"; exit 1; }
+  echo "== generated-code passes for the CPU"
+  # The guest stack's accesses without volatile (make_nx_pch.py, point 4).
+  (cd "$ST" && python3 "$ROOT/dante/tools/patch_stack_access.py" generated/default/*.cpp) > "$CG/patch_stack_access.log"
+  tail -1 "$CG/patch_stack_access.log"
+  # Calls the compiler may inline: same-file functions no hook replaces, and the register save/restore helpers.
+  (cd "$ST" && python3 "$ROOT/dante/tools/patch_inline_calls.py" "$ROOT/dante/src" "$ROOT/sdk/src" "$ROOT/sdk/include" \
+    -- generated/default/dantes_inferno_recomp.*.cpp) > "$CG/patch_inline_calls.log"
+  tail -1 "$CG/patch_inline_calls.log" | cut -c1-160
+  # The guest registers in host locals inside each function, with ctx exact only where a call or a return needs it
+  # (the registers each function reads and changes, worked out over the whole call graph).
+  if [ "$LOCALREGS" = 1 ]; then
+    (cd "$ST" && PLR_MAP="$CG/patch_local_regs.check.map" python3 "$ROOT/dante/tools/patch_local_regs.py" \
+      generated/default/dantes_inferno_inline_helpers.h "$ROOT/dante/src" "$ROOT/sdk/src" "$ROOT/sdk/include" \
+      -- generated/default/dantes_inferno_recomp.*.cpp) > "$CG/patch_local_regs.log" 2>&1 || {
+      tail -20 "$CG/patch_local_regs.log"; exit 1; }
+    tail -1 "$CG/patch_local_regs.log"
+  fi
   python3 - "$ST/generated/default" "$CG/generated/default" <<'PY'
 import filecmp, os, shutil, sys
 new, old = sys.argv[1:]

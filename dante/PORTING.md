@@ -127,7 +127,8 @@ nearly all of it; float IDCT on VMX).
 
 - Registers in locals (`tools/localize_regs.py`, a copy of a function with the guest registers as local variables) was
   tried first and checked on the Mac against the original with random inputs (identical registers and memory in 40
-  runs): ×1.02 on warm data with clang. The context is `__restrict`; the cost is the VMX code itself. Not used.
+  runs): ×1.02 on warm data with clang. The context is `__restrict`; the cost is the VMX code itself. Not used (the
+  script is gone: `tools/patch_local_regs.py` now does this for every function, see `CPU_OPTIMIZATION.md`).
 - FFmpeg's VP6 (`sdk-patches/0009` adds it to the SDK's FFmpeg) decodes these movies at ~1.1 ms a frame on one Mac
   core. `src/dante_video.cpp` hooks `VP6_DecodeFrameMbs` (0x826974D0, the macroblock pass, named in `codegen/names.toml`):
   at a frame's first row it decodes the whole frame into the game's frame buffer and marks every row done; the header
