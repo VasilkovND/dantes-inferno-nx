@@ -1,0 +1,43 @@
+From 8efbcbfb8be622a1fdec8cdcaaa7e439d27abc2c Mon Sep 17 00:00:00 2001
+From: VasilkovND <19706238+VasilkovND@users.noreply.github.com>
+Date: Fri, 6 Nov 2026 22:17:09 +0300
+Subject: [PATCH] Fix DLC enumeration crash: treat X_ERROR_FILE_NOT_FOUND as
+ failure in ListContent
+
+XSUCCEEDED() uses NTSTATUS semantics ((s & 0xC0000000) == 0) and is true
+for X_ERROR_FILE_NOT_FOUND (0x2), so packages without a .header file were
+listed with an uninitialized XCONTENT_AGGREGATE_DATA, producing garbage
+names and a crash in std::filesystem on the Kernel Dispatch thread.
+
+Compare the result with X_ERROR_SUCCESS explicitly and value-initialize
+the struct so the existing fallback (folder name as file/display name) runs.
+
+Fixes VasilkovND/dantes-inferno-nx#3 (credit to @Codebr0ken for the
+diagnosis and the original patch in PR #1).
+---
+ src/system/xam/content_manager.cpp | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/src/system/xam/content_manager.cpp b/src/system/xam/content_manager.cpp
+index 78826a6..b1180c9 100644
+--- a/src/system/xam/content_manager.cpp
++++ b/src/system/xam/content_manager.cpp
+@@ -313,9 +313,12 @@ std::vector<XCONTENT_AGGREGATE_DATA> ContentManager::ListContent(uint32_t device
+       continue;
+     }
+ 
+-    XCONTENT_AGGREGATE_DATA content_data;
+-    if (XSUCCEEDED(ReadContentHeaderFile(rex::path_to_utf8(file_info.name), xuid, title_id,
+-                                         content_type, content_data))) {
++    // ReadContentHeaderFile returns X_RESULT codes (e.g. X_ERROR_FILE_NOT_FOUND = 0x2),
++    // which have no NT-style severity bits, so XSUCCEEDED() is true for them. Compare
++    // with X_ERROR_SUCCESS explicitly and value-initialize so the fallback below runs.
++    XCONTENT_AGGREGATE_DATA content_data{};
++    if (ReadContentHeaderFile(rex::path_to_utf8(file_info.name), xuid, title_id,
++                              content_type, content_data) == X_ERROR_SUCCESS) {
+       result.emplace_back(std::move(content_data));
+     } else {
+       content_data.device_id = device_id;
+-- 
+2.50.1 (Apple Git-155)
+

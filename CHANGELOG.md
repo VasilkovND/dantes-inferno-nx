@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed the crash when listing DLC installed as plain folders** (`sdk-patches/0013`, issue
+  [#3](https://github.com/VasilkovND/dantes-inferno-nx/issues/3), diagnosed by @Codebr0ken):
+  `XSUCCEEDED()` is true for `X_ERROR_FILE_NOT_FOUND` (X_RESULT codes carry no NT severity bits),
+  so DLC packages without a `.header` were listed with an uninitialized `XCONTENT_AGGREGATE_DATA` —
+  garbage names, then a `std::filesystem` abort on the Kernel Dispatch thread. The header read is
+  now compared with `X_ERROR_SUCCESS` and the struct is value-initialised, so the existing fallback
+  (folder name as file/display name) runs. Saves (which do have a `.header`) are unaffected.
+
 ## 1.1.0 (TU2) — 2026-10-23
 
 - **The game's CPU work is faster** (`dante/tools/patch_stack_access.py`, `patch_inline_calls.py`,
